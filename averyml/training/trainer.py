@@ -38,6 +38,7 @@ class SSDTrainer:
             dataset_path=self.config.dataset_path,
             tokenizer=tokenizer,
             max_seq_length=self.config.max_seq_length,
+            packing=self.config.packing,
         ).load()
 
         logger.info(f"Dataset ready: {len(dataset)} samples")

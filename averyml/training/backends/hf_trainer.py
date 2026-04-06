@@ -62,6 +62,30 @@ class HFTrainerBackend(TrainingBackend):
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
+        # Apply LoRA if configured
+        if config.use_lora:
+            try:
+                from peft import LoraConfig, get_peft_model, TaskType
+
+                lora_config = LoraConfig(
+                    r=config.lora_rank,
+                    lora_alpha=config.lora_alpha,
+                    target_modules=config.lora_target_modules or ["q_proj", "v_proj"],
+                    lora_dropout=config.lora_dropout,
+                    task_type=TaskType.CAUSAL_LM,
+                )
+                model = get_peft_model(model, lora_config)
+                trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                total = sum(p.numel() for p in model.parameters())
+                logger.info(
+                    f"LoRA applied: {trainable:,} trainable params / {total:,} total "
+                    f"({trainable / total * 100:.2f}%)"
+                )
+            except ImportError:
+                raise ImportError(
+                    "LoRA requires the peft package. Install with: pip install averyml[training]"
+                )
+
         if config.gradient_checkpointing:
             model.gradient_checkpointing_enable()
 

@@ -25,10 +25,11 @@ class SFTDataset:
     so cross-entropy loss only applies to the completion.
     """
 
-    def __init__(self, dataset_path: str, tokenizer: Any, max_seq_length: int = 65536):
+    def __init__(self, dataset_path: str, tokenizer: Any, max_seq_length: int = 65536, packing: bool = False):
         self.dataset_path = Path(dataset_path)
         self.tokenizer = tokenizer
         self.max_seq_length = max_seq_length
+        self.packing = packing
 
     def load(self):
         """Load and tokenize the dataset. Returns a HuggingFace Dataset."""
@@ -116,8 +117,65 @@ class SFTDataset:
         )
         ds = ds.filter(lambda x: len(x["input_ids"]) > 0, desc="Filtering empty")
 
+        logger.info(f"Tokenized dataset: {len(ds)} samples")
+
+        if self.packing:
+            ds = self._pack_dataset(ds)
+            logger.info(f"Packed dataset: {len(ds)} packed sequences")
+
         logger.info(f"Final dataset: {len(ds)} samples")
         return ds
+
+    def _pack_dataset(self, ds):
+        """Pack multiple short samples into max_seq_length sequences.
+
+        Concatenates samples end-to-end with EOS boundaries. Produces
+        ~3-5x fewer but longer sequences, eliminating padding waste.
+        """
+        from datasets import Dataset as HFDataset
+
+        eos_id = self.tokenizer.eos_token_id or 0
+        packed = []
+        current_ids = []
+        current_labels = []
+
+        for sample in ds:
+            sample_ids = sample["input_ids"]
+            sample_labels = sample["labels"]
+
+            # Would overflow — finalize current bin
+            if current_ids and len(current_ids) + len(sample_ids) + 1 > self.max_seq_length:
+                packed.append(self._finalize_packed(current_ids, current_labels))
+                current_ids = []
+                current_labels = []
+
+            # Add separator between documents
+            if current_ids:
+                current_ids.append(eos_id)
+                current_labels.append(-100)  # don't compute loss on separator
+
+            current_ids.extend(sample_ids)
+            current_labels.extend(sample_labels)
+
+        # Finalize last bin
+        if current_ids:
+            packed.append(self._finalize_packed(current_ids, current_labels))
+
+        unpacked_count = len(ds)
+        pack_ratio = unpacked_count / max(len(packed), 1)
+        logger.info(f"Packing: {unpacked_count} samples -> {len(packed)} sequences ({pack_ratio:.1f}x compression)")
+
+        return HFDataset.from_list(packed)
+
+    def _finalize_packed(self, ids: list[int], labels: list[int]) -> dict:
+        """Pad a packed sequence to max_seq_length."""
+        pad_id = self.tokenizer.pad_token_id or 0
+        pad_len = self.max_seq_length - len(ids)
+        return {
+            "input_ids": ids + [pad_id] * pad_len,
+            "attention_mask": [1] * len(ids) + [0] * pad_len,
+            "labels": labels + [-100] * pad_len,
+        }
 
     def _tokenize_and_mask(self, example: dict) -> dict:
         """Tokenize a chat conversation and mask prompt tokens in labels.

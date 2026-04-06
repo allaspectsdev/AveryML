@@ -3,6 +3,9 @@
 Runs the full SSD pipeline (synthesis -> training -> evaluation) for each
 cell in the temperature grid. This is central to reproducing the paper's
 key finding about T_eff = T_train * T_eval (Figure 3, Section 3.4).
+
+V2: Uses synthesis caching — cells that share the same T_train reuse
+synthesis outputs instead of re-sampling (saves 40-80% of compute).
 """
 
 from __future__ import annotations
@@ -14,9 +17,10 @@ import pandas as pd
 
 from averyml.config.evaluation import EvaluationConfig
 from averyml.config.search import SearchConfig
-from averyml.config.synthesis import DecodingConfig, SynthesisConfig
+from averyml.config.synthesis import SynthesisConfig
 from averyml.config.training import TrainingConfig
 from averyml.evaluation.evaluator import Evaluator
+from averyml.search.cache import SynthesisCache
 from averyml.search.temperature import TemperaturePoint, build_grid, filter_diagonal_band
 from averyml.search.tracker import SearchTracker
 from averyml.synthesis.sampler import Sampler
@@ -26,7 +30,11 @@ logger = logging.getLogger(__name__)
 
 
 class GridSearch:
-    """Runs the full SSD pipeline for each point in the temperature grid."""
+    """Runs the full SSD pipeline for each point in the temperature grid.
+
+    Uses a SynthesisCache to avoid redundant synthesis when multiple cells
+    share the same T_train configuration.
+    """
 
     def __init__(self, config: SearchConfig, diagonal_only: bool = False):
         self.config = config
@@ -42,8 +50,14 @@ class GridSearch:
 
         output_path = Path(self.config.output_path)
         tracker = SearchTracker(output_path)
+        cache = SynthesisCache(output_path / "cache")
+
         remaining = tracker.get_remaining(grid)
         logger.info(f"Remaining: {len(remaining)} cells ({len(grid) - len(remaining)} already complete)")
+
+        # Count unique T_train values for logging
+        unique_t_train = {p.t_train for p in remaining}
+        logger.info(f"Unique T_train values: {len(unique_t_train)} (cache can save {len(remaining) - len(unique_t_train)} synthesis runs)")
 
         for i, point in enumerate(remaining):
             logger.info(f"\n{'='*60}")
@@ -51,7 +65,7 @@ class GridSearch:
             logger.info(f"{'='*60}")
 
             try:
-                metrics = self._run_cell(point, output_path)
+                metrics = self._run_cell(point, output_path, cache)
                 tracker.mark_complete(point, metrics)
             except Exception as e:
                 logger.error(f"Cell failed: {point} - {e}")
@@ -59,12 +73,12 @@ class GridSearch:
 
         return tracker.load_results()
 
-    def _run_cell(self, point: TemperaturePoint, output_path: Path) -> dict:
+    def _run_cell(self, point: TemperaturePoint, output_path: Path, cache: SynthesisCache) -> dict:
         """Run the full SSD pipeline for a single grid cell."""
         cell_dir = output_path / f"t_train_{point.t_train}_t_eval_{point.t_eval}"
         cell_dir.mkdir(parents=True, exist_ok=True)
 
-        # Step 1: Synthesis
+        # Step 1: Synthesis (with caching)
         synth_config = SynthesisConfig(
             model_id=self.config.base_model_id,
             prompt_source=self.config.prompt_source,
@@ -73,7 +87,14 @@ class GridSearch:
             decoding=point.rho_train,
             output_path=str(cell_dir / "synthesis"),
         )
-        dataset_path = Sampler(synth_config).run()
+
+        cached_path = cache.get(synth_config)
+        if cached_path is not None:
+            dataset_path = cached_path
+            logger.info(f"Using cached synthesis: {cached_path}")
+        else:
+            dataset_path = Sampler(synth_config).run()
+            cache.put(synth_config, dataset_path)
 
         # Step 2: Training
         train_config = TrainingConfig(

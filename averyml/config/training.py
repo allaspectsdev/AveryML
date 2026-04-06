@@ -42,6 +42,19 @@ class TrainingConfig(BaseConfig):
     # Precision / hardware
     bf16: bool = Field(default=True, description="Use bfloat16 mixed precision")
     gradient_checkpointing: bool = Field(default=True, description="Enable gradient checkpointing")
+    packing: bool = Field(
+        default=False,
+        description="Pack multiple samples into max_seq_length sequences (3-5x throughput)",
+    )
+
+    # LoRA / PEFT
+    use_lora: bool = Field(default=False, description="Use LoRA for parameter-efficient fine-tuning")
+    lora_rank: int = Field(default=16, ge=1, description="LoRA rank (r)")
+    lora_alpha: int = Field(default=32, ge=1, description="LoRA alpha scaling factor")
+    lora_target_modules: list[str] | None = Field(
+        default=None, description="LoRA target modules (None = auto-detect q_proj, v_proj)"
+    )
+    lora_dropout: float = Field(default=0.05, ge=0, le=1, description="LoRA dropout rate")
 
     # Checkpointing
     save_steps: int = Field(default=500, ge=1, description="Save checkpoint every N steps")

@@ -40,4 +40,8 @@ class SynthesisConfig(BaseConfig):
     tensor_parallel_size: int = Field(default=1, ge=1, description="GPUs for vLLM tensor parallelism")
     output_path: str = Field(default="./data/synthesis", description="Output directory")
     output_format: str = Field(default="jsonl", description="Output format: 'jsonl' or 'hf_dataset'")
+    checkpoint_every: int = Field(
+        default=0, ge=0,
+        description="Save partial results every N prompts (0 to disable). Enables resume on crash.",
+    )
     seed: int = Field(default=42, description="Random seed")
