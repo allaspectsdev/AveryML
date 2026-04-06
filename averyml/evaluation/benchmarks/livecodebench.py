@@ -108,9 +108,15 @@ class LiveCodeBench(Benchmark):
 
         code_blocks = has_code(code) if isinstance(code, str) else code
         if not code_blocks:
-            result_entry["correctness"] = False
-            result_entry["reason"] = "No code block found."
-            return result_entry
+            # Fallback: try the raw response as code (model may not use markdown fences)
+            stripped = code.strip() if isinstance(code, str) else ""
+            if stripped and any(kw in stripped for kw in ("def ", "import ", "print(", "for ", "while ", "if ")):
+                code_blocks = [stripped]
+                logger.debug(f"No code fences found for {problem.get('task_id')}, using raw response as code")
+            else:
+                result_entry["correctness"] = False
+                result_entry["reason"] = "No code block found."
+                return result_entry
 
         try:
             last_code = code_blocks[-1]

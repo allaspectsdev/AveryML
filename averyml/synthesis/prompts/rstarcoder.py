@@ -37,12 +37,23 @@ class RStarCoderPromptSource(PromptSource):
         logger.info(f"Loading rSTARcoder prompts from: {self.dataset_name}")
 
         if self.dataset_name:
-            ds = load_dataset(self.dataset_name, split="train")
+            logger.info(f"Loading dataset: {self.dataset_name}")
+            try:
+                ds = load_dataset(self.dataset_name, split="train")
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to load rSTARcoder dataset '{self.dataset_name}': {e}\n"
+                    f"Check that the dataset ID is correct and accessible. "
+                    f"You may need to accept the dataset's license on HuggingFace."
+                ) from e
         else:
-            # Fallback: use LiveCodeBench problems as prompt source
             logger.warning(
-                "No rSTARcoder dataset specified. Using LiveCodeBench problems as prompt source. "
-                "For full SSD reproduction, provide the rSTARcoder seed dataset."
+                "=" * 60 + "\n"
+                "WARNING: No prompt_dataset specified for rSTARcoder source.\n"
+                "Falling back to LiveCodeBench problems as prompts.\n"
+                "This uses a DIFFERENT distribution than the paper.\n"
+                "For faithful SSD reproduction, set prompt_dataset in your config.\n"
+                + "=" * 60
             )
             ds = load_dataset("livecodebench/code_generation_lite", split="test", trust_remote_code=True)
 

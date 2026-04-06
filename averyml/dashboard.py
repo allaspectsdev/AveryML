@@ -687,6 +687,124 @@ def build_config_tab(state: DashboardState):
 # ---------------------------------------------------------------------------
 
 
+def build_data_explorer_tab(state: DashboardState):
+    """Tab 6: Browse synthesis output datasets."""
+    import gradio as gr
+
+    gr.Markdown("### Data Explorer\nBrowse synthesized training data before running training.")
+
+    # Find JSONL files in common data directories
+    data_dirs = [state.results_dir.parent / "data", Path("./data")]
+    jsonl_files = []
+    for d in data_dirs:
+        if d.exists():
+            jsonl_files.extend([str(f) for f in sorted(d.rglob("*.jsonl"))])
+
+    if not jsonl_files:
+        gr.Markdown(
+            "**No synthesis data found.**\n\n"
+            "Run `averyml synthesize` first, then refresh.\n\n"
+            "Or enter a path to a JSONL file below."
+        )
+
+    with gr.Row():
+        file_picker = gr.Dropdown(choices=jsonl_files, label="Dataset File", interactive=True,
+                                   value=jsonl_files[0] if jsonl_files else None)
+        custom_path = gr.Textbox(label="Or enter path", placeholder="./data/synthesis/synthesis.jsonl")
+        load_btn = gr.Button("Load", variant="primary")
+
+    with gr.Row():
+        stats_md = gr.Markdown("")
+
+    sample_table = gr.Dataframe(
+        headers=["#", "prompt_id", "prompt_text", "response", "length"],
+        interactive=False,
+        wrap=True,
+    )
+
+    with gr.Row():
+        page_num = gr.Number(value=1, label="Page", precision=0, minimum=1)
+        page_size = gr.Number(value=20, label="Page size", precision=0, minimum=1, maximum=100)
+        nav_btn = gr.Button("Go", size="sm")
+
+    def load_data(file_path, custom):
+        path = custom.strip() if custom and custom.strip() else file_path
+        if not path:
+            return "No file selected", pd.DataFrame()
+
+        p = Path(path)
+        if not p.exists():
+            return f"File not found: {path}", pd.DataFrame()
+
+        try:
+            from averyml.utils.io import read_jsonl
+            samples = read_jsonl(p)
+        except Exception as e:
+            return f"Error reading file: {e}", pd.DataFrame()
+
+        if not samples:
+            return "File is empty", pd.DataFrame()
+
+        # Compute stats
+        lengths = [len(s.get("response", "")) for s in samples]
+        avg_len = sum(lengths) / len(lengths)
+        empty = sum(1 for l in lengths if l == 0)
+
+        stats = (
+            f"**{len(samples)} samples** | "
+            f"Avg response length: {avg_len:.0f} chars | "
+            f"Empty responses: {empty} | "
+            f"File: `{path}`"
+        )
+
+        # First page
+        rows = []
+        for i, s in enumerate(samples[:20]):
+            resp = s.get("response", "")
+            rows.append({
+                "#": i,
+                "prompt_id": str(s.get("prompt_id", ""))[:30],
+                "prompt_text": s.get("prompt_text", "")[:100] + "...",
+                "response": resp[:200] + ("..." if len(resp) > 200 else ""),
+                "length": len(resp),
+            })
+
+        return stats, pd.DataFrame(rows)
+
+    def navigate(file_path, custom, page, size):
+        path = custom.strip() if custom and custom.strip() else file_path
+        if not path:
+            return pd.DataFrame()
+
+        p = Path(path)
+        if not p.exists():
+            return pd.DataFrame()
+
+        from averyml.utils.io import read_jsonl
+        samples = read_jsonl(p)
+
+        page = max(1, int(page))
+        size = max(1, min(100, int(size)))
+        start = (page - 1) * size
+        end = start + size
+
+        rows = []
+        for i, s in enumerate(samples[start:end], start=start):
+            resp = s.get("response", "")
+            rows.append({
+                "#": i,
+                "prompt_id": str(s.get("prompt_id", ""))[:30],
+                "prompt_text": s.get("prompt_text", "")[:100] + "...",
+                "response": resp[:200] + ("..." if len(resp) > 200 else ""),
+                "length": len(resp),
+            })
+
+        return pd.DataFrame(rows)
+
+    load_btn.click(fn=load_data, inputs=[file_picker, custom_path], outputs=[stats_md, sample_table])
+    nav_btn.click(fn=navigate, inputs=[file_picker, custom_path, page_num, page_size], outputs=[sample_table])
+
+
 def create_app(results_dir: str = "./results", configs_dir: str = "./configs",
                search_dir: str = "./search_results") -> Any:
     """Create the Gradio Blocks app."""
@@ -707,6 +825,8 @@ def create_app(results_dir: str = "./results", configs_dir: str = "./configs",
             build_results_tab(state)
         with gr.Tab("Temperature Search"):
             build_search_tab(state)
+        with gr.Tab("Data Explorer"):
+            build_data_explorer_tab(state)
         with gr.Tab("Config Editor"):
             build_config_tab(state)
 

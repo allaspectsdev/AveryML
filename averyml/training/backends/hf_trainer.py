@@ -32,11 +32,29 @@ class HFTrainerBackend(TrainingBackend):
         )
 
         logger.info(f"Loading model: {config.model_id}")
-        model = AutoModelForCausalLM.from_pretrained(
-            config.model_id,
-            torch_dtype=torch.bfloat16 if config.bf16 else torch.float32,
-            attn_implementation="flash_attention_2" if config.bf16 else None,
-        )
+
+        # Try flash_attention_2, fall back gracefully if unsupported
+        attn_impl = None
+        if config.bf16:
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.bfloat16,
+                    attn_implementation="flash_attention_2",
+                )
+                attn_impl = "flash_attention_2"
+                logger.info("Using flash_attention_2")
+            except (ValueError, ImportError) as e:
+                logger.warning(f"flash_attention_2 not available ({e}), using default attention")
+                model = AutoModelForCausalLM.from_pretrained(
+                    config.model_id,
+                    torch_dtype=torch.bfloat16,
+                )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                config.model_id,
+                torch_dtype=torch.float32,
+            )
 
         # Reuse the tokenizer from the trainer if provided, to avoid mismatches
         if tokenizer is None:
@@ -94,8 +112,23 @@ class HFTrainerBackend(TrainingBackend):
             data_collator=data_collator,
         )
 
+        # Resume from checkpoint if available
+        resume_path = None
+        if config.resume_from_checkpoint:
+            if config.resume_from_checkpoint is True:
+                # Find latest checkpoint in output_dir
+                checkpoints = sorted(output_dir.glob("checkpoint-*"), key=lambda p: p.stat().st_mtime)
+                if checkpoints:
+                    resume_path = str(checkpoints[-1])
+                    logger.info(f"Resuming from latest checkpoint: {resume_path}")
+                else:
+                    logger.info("No checkpoints found, starting fresh")
+            elif isinstance(config.resume_from_checkpoint, str):
+                resume_path = config.resume_from_checkpoint
+                logger.info(f"Resuming from: {resume_path}")
+
         logger.info(f"Starting training: {config.num_train_iterations} steps, lr={config.learning_rate}")
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_path)
 
         # Save final checkpoint
         final_path = output_dir / "final_checkpoint"

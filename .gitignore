@@ -40,3 +40,4 @@ htmlcov/
 # Misc
 .env
 *.log
+*.yaml.bak

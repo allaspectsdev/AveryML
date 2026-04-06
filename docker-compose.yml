@@ -1,0 +1,23 @@
+services:
+  averyml:
+    build: .
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN:-}
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./results:/app/results
+      - ./configs:/app/configs
+      - hf_cache:/app/.cache
+    ports:
+      - "7860:7860"
+    # Override command as needed:
+    #   docker compose run averyml synthesize --config configs/synthesis/default.yaml
+    #   docker compose run averyml dashboard --share
+    command: ["--help"]
+
+volumes:
+  hf_cache:

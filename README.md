@@ -102,11 +102,12 @@ pip install averyml[dashboard]
 averyml dashboard
 ```
 
-**5 tabs:**
+**6 tabs:**
 - **Home** — At-a-glance project status, recent results, job monitor
 - **Pipeline** — Launch synthesis/train/evaluate from the browser with config selection and live logs
 - **Results** — Side-by-side run comparison with interactive Plotly charts and per-difficulty breakdowns
 - **Temperature Search** — Interactive heatmap of (T_train, T_eval) grid + T_eff curve with quadratic fit
+- **Data Explorer** — Browse synthesis datasets with pagination, length stats, and sample preview
 - **Config Editor** — Edit YAML configs with live Pydantic validation and auto-generated field docs
 
 ---
@@ -191,6 +192,28 @@ SSD generalizes across model families, scales, and reasoning styles:
 | Qwen3-30B-Instruct | MoE, instruct | Best absolute results in paper |
 | Qwen3-30B-Thinking | MoE, thinking | Largest gains on hard problems |
 | Llama-3.1-8B-Instruct | Dense, instruct | Cross-family generalization |
+
+---
+
+## Docker
+
+Run on cloud GPUs without dependency headaches:
+
+```bash
+# Build
+docker build -t averyml .
+
+# Run the full pipeline
+docker run --gpus all -v $(pwd)/data:/app/data -v $(pwd)/results:/app/results \
+    -e HF_TOKEN=$HF_TOKEN \
+    averyml run-pipeline --config configs/experiments/full_pipeline_qwen3_4b.yaml
+
+# Launch dashboard
+docker run --gpus all -p 7860:7860 averyml dashboard --share
+
+# Or use docker compose
+HF_TOKEN=hf_xxx docker compose run averyml synthesize --config configs/synthesis/default.yaml
+```
 
 ---
 

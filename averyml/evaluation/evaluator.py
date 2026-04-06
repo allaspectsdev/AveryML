@@ -61,6 +61,10 @@ class Evaluator:
 
     def _generate_solutions(self, problems: list[dict], benchmark: LiveCodeBench) -> list[list[str]]:
         """Generate n_repeat solutions per problem using the configured backend."""
+        import time
+
+        from tqdm import tqdm
+
         # Reuse synthesis backend infrastructure for generation
         backend_cls = synthesis_backend_registry.get(self.config.backend)
         if self.config.backend == "vllm":
@@ -74,13 +78,17 @@ class Evaluator:
         # all_outputs[problem_idx][repeat_idx] = model output text
         all_outputs: list[list[str]] = [[] for _ in problems]
 
-        for i in range(self.config.n_repeat):
+        for i in tqdm(range(self.config.n_repeat), desc="Generation repeats"):
             seed = self.config.seeds[i % len(self.config.seeds)]
-
             prompts = [benchmark.format_prompt(p, backend.tokenizer) for p in problems]
 
-            logger.info(f"Generating solutions (repeat {i + 1}/{self.config.n_repeat})...")
+            start = time.time()
             texts = backend.generate(prompts, self.config.decoding, self.config.max_tokens, seed)
+            elapsed = time.time() - start
+            logger.info(
+                f"Repeat {i + 1}/{self.config.n_repeat}: "
+                f"{len(texts)} solutions in {elapsed:.1f}s"
+            )
 
             for j, text in enumerate(texts):
                 all_outputs[j].append(text)
@@ -95,18 +103,25 @@ class Evaluator:
         benchmark: LiveCodeBench,
     ) -> tuple[dict[str, list[list[int]]], dict[str, str]]:
         """Evaluate all generated solutions and return results grouped by task_id."""
+        from tqdm import tqdm
+
+        from averyml.evaluation.benchmarks.livecodebench_utils import has_code
+
         results_by_task: dict[str, list[list[int]]] = defaultdict(list)
         task_difficulty: dict[str, str] = {}
+        no_code_count = 0
+        total_evals = 0
 
         logger.info(f"Evaluating {len(problems)} problems x {self.config.n_repeat} repeats...")
 
-        for repeat_idx in range(self.config.n_repeat):
-            batch_results = []
+        for repeat_idx in tqdm(range(self.config.n_repeat), desc="Evaluation repeats"):
             for i, problem in enumerate(problems):
                 result = benchmark.evaluate_solution(problem, all_outputs[i][repeat_idx])
-                batch_results.append(result)
+                total_evals += 1
 
-            for i, result in enumerate(batch_results):
+                if result.get("reason") == "No code block found.":
+                    no_code_count += 1
+
                 task_id = result["task_id"]
                 task_difficulty[task_id] = problems[i].get("difficulty", "unknown")
                 test_results = result.get("test_results", [])
@@ -115,5 +130,13 @@ class Evaluator:
                 else:
                     num_tests = max(len(problems[i].get("test", [])), 1)
                     results_by_task[task_id].append([0] * num_tests)
+
+        if no_code_count > 0:
+            pct = no_code_count / total_evals * 100
+            logger.warning(
+                f"Code extraction failed for {no_code_count}/{total_evals} solutions ({pct:.1f}%). "
+                f"The model may not be wrapping code in ```python blocks. "
+                f"Consider adjusting the prompt template."
+            )
 
         return dict(results_by_task), task_difficulty

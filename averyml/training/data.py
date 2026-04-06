@@ -15,6 +15,8 @@ from averyml.utils.io import read_jsonl
 
 logger = logging.getLogger(__name__)
 
+EXPECTED_FIELDS = {"prompt_text", "response"}
+
 
 class SFTDataset:
     """Prepares synthesis output for supervised fine-tuning.
@@ -41,14 +43,37 @@ class SFTDataset:
         else:
             raise ValueError(f"Unsupported dataset path: {self.dataset_path}")
 
-        logger.info(f"Loaded {len(raw_samples)} samples from {self.dataset_path}")
+        logger.info(f"Loaded {len(raw_samples)} raw samples from {self.dataset_path}")
+
+        if not raw_samples:
+            raise ValueError(f"Dataset is empty: {self.dataset_path}")
+
+        # Validate fields
+        first_keys = set(raw_samples[0].keys())
+        missing = EXPECTED_FIELDS - first_keys
+        if missing:
+            raise ValueError(
+                f"Dataset is missing required fields: {missing}. "
+                f"Found fields: {sorted(first_keys)}. "
+                f"Expected at least: {sorted(EXPECTED_FIELDS)}. "
+                f"Make sure the synthesis output matches the training data format."
+            )
+
+        # Validate tokenizer has chat template
+        if not hasattr(self.tokenizer, "apply_chat_template"):
+            raise ValueError(
+                f"Tokenizer for {getattr(self.tokenizer, 'name_or_path', '?')} "
+                f"does not support apply_chat_template. Use a chat/instruct model."
+            )
 
         # Format as chat conversations
         formatted = []
+        skipped = 0
         for sample in raw_samples:
             prompt_text = sample.get("prompt_text", "")
             response = sample.get("response", "")
             if not prompt_text or not response:
+                skipped += 1
                 continue
             formatted.append({
                 "messages": [
@@ -57,7 +82,31 @@ class SFTDataset:
                 ]
             })
 
+        if skipped > 0:
+            pct = skipped / len(raw_samples) * 100
+            logger.warning(
+                f"Skipped {skipped}/{len(raw_samples)} samples ({pct:.1f}%) "
+                f"with empty prompt_text or response"
+            )
+
+        if not formatted:
+            raise ValueError(
+                f"All {len(raw_samples)} samples were filtered out. "
+                f"Check that the dataset has non-empty 'prompt_text' and 'response' fields."
+            )
+
         logger.info(f"Formatted {len(formatted)} samples as chat conversations")
+
+        # Validate first sample tokenizes correctly
+        try:
+            test_result = self._tokenize_and_mask(formatted[0])
+            if len(test_result["input_ids"]) == 0:
+                logger.warning("First sample tokenized to 0 tokens — check chat template compatibility")
+        except Exception as e:
+            raise ValueError(
+                f"Failed to tokenize first sample: {e}. "
+                f"This usually means the tokenizer's chat template is incompatible."
+            ) from e
 
         ds = Dataset.from_list(formatted)
         ds = ds.map(

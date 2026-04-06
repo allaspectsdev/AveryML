@@ -46,6 +46,10 @@ class TrainingConfig(BaseConfig):
     # Checkpointing
     save_steps: int = Field(default=500, ge=1, description="Save checkpoint every N steps")
     logging_steps: int = Field(default=10, ge=1, description="Log every N steps")
+    resume_from_checkpoint: bool | str = Field(
+        default=False,
+        description="Resume training: True=latest checkpoint, str=specific path, False=start fresh",
+    )
 
     # Tracking
     wandb_project: str | None = Field(default=None, description="W&B project (None to disable)")

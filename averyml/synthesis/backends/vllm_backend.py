@@ -19,8 +19,18 @@ class VLLMSynthesisBackend(SynthesisBackend):
         self._tokenizer = None
 
     def load_model(self, model_id: str, **kwargs: Any) -> None:
+        import torch
         from transformers import AutoTokenizer
         from vllm import LLM
+
+        if self._tensor_parallel_size > 1:
+            gpu_count = torch.cuda.device_count()
+            if gpu_count < self._tensor_parallel_size:
+                raise RuntimeError(
+                    f"Requested tensor_parallel_size={self._tensor_parallel_size} "
+                    f"but only {gpu_count} GPU(s) available. "
+                    f"Set tensor_parallel_size <= {gpu_count} in your config."
+                )
 
         self._llm = LLM(
             model=model_id,

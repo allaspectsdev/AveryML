@@ -7,7 +7,10 @@ applies minimal filtering, and writes the output dataset.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
+
+from tqdm import tqdm
 
 from averyml.config.synthesis import SynthesisConfig
 from averyml.synthesis.dataset_writer import DatasetWriter
@@ -41,28 +44,34 @@ class Sampler:
         logger.info(f"Loaded {len(prompts)} prompts from '{self.config.prompt_source}'")
 
         # Load model
-        backend.load_model(
-            self.config.model_id,
-            **({"tensor_parallel_size": self.config.tensor_parallel_size}
-               if self.config.backend == "vllm" else {}),
-        )
-        logger.info(f"Model loaded: {self.config.model_id} (backend={self.config.backend})")
+        logger.info(f"Loading model: {self.config.model_id} (backend={self.config.backend})")
+        backend.load_model(self.config.model_id)
+        logger.info("Model loaded")
 
         # Generate samples
         all_samples = []
-        for sample_idx in range(self.config.n_samples):
+        total_rounds = self.config.n_samples
+        start_time = time.time()
+
+        for sample_idx in tqdm(range(total_rounds), desc="Sampling rounds", disable=total_rounds <= 1):
             seed = self.config.seed + sample_idx
-            logger.info(f"Generating sample {sample_idx + 1}/{self.config.n_samples} (seed={seed})...")
+            logger.info(f"Generating sample {sample_idx + 1}/{total_rounds} (seed={seed})...")
 
             # Format prompts for the model
             formatted = [prompt_source.format_for_model(p, backend.tokenizer) for p in prompts]
 
             # Generate
+            round_start = time.time()
             responses = backend.generate(
                 formatted,
                 self.config.decoding,
                 self.config.max_tokens,
                 seed,
+            )
+            round_elapsed = time.time() - round_start
+            logger.info(
+                f"Round {sample_idx + 1} complete: {len(responses)} responses "
+                f"in {round_elapsed:.1f}s ({len(responses) / max(round_elapsed, 0.1):.1f} prompts/s)"
             )
 
             for prompt, response in zip(prompts, responses):
@@ -74,11 +83,20 @@ class Sampler:
                     "decoding_config": self.config.decoding.model_dump(),
                 })
 
-        logger.info(f"Generated {len(all_samples)} total samples")
+        total_elapsed = time.time() - start_time
+        logger.info(f"Generated {len(all_samples)} total samples in {total_elapsed:.1f}s")
 
         # Apply minimal filtering
         filtered = apply_minimal_filters(all_samples)
-        logger.info(f"After filtering: {len(filtered)} samples (removed {len(all_samples) - len(filtered)})")
+        removed = len(all_samples) - len(filtered)
+        pct = (removed / len(all_samples) * 100) if all_samples else 0
+        logger.info(f"After filtering: {len(filtered)} samples (removed {removed}, {pct:.1f}%)")
+        if pct > 20:
+            logger.warning(
+                f"High filter rate ({pct:.1f}%). This may indicate a problem with generation "
+                f"(e.g., wrong prompt format, model producing empty outputs). "
+                f"SSD typically filters <5% of samples."
+            )
 
         # Write output
         output_path = Path(self.config.output_path)
