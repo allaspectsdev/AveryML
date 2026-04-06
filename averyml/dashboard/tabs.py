@@ -26,7 +26,10 @@ from averyml.dashboard.state import (
     validate_config,
     get_config_class,
 )
-from averyml.dashboard.theme import empty_state, metric_card, status_badge
+from averyml.dashboard.theme import (
+    empty_state, hero_banner, highlight_card, metric_card,
+    pipeline_steps, status_badge,
+)
 
 
 # ========================================================================== #
@@ -36,53 +39,76 @@ from averyml.dashboard.theme import empty_state, metric_card, status_badge
 def build_home_tab(state: DashboardState, runner: JobRunner):
     import gradio as gr
 
-    gr.Markdown(f"""
-# AveryML Dashboard <span style="font-size:0.5em; color:#94a3b8">v{averyml.__version__}</span>
-
-**Simple Self-Distillation pipeline for LLM code generation**
-    """)
+    # Hero banner
+    gr.HTML(hero_banner())
 
     results = load_all_results(state)
     configs = list_configs(state)
     search_df = load_search_results(state)
 
-    # Metric cards row
-    with gr.Row():
-        gr.HTML(metric_card(str(len(results)), "Evaluation Runs"))
+    # Metric cards
+    with gr.Row(equal_height=True):
+        gr.HTML(metric_card(str(len(results)), "Eval Runs", icon="&#x1f4ca;"))
         gr.HTML(metric_card(
             str(len(search_df)) if search_df is not None else "0",
-            "Grid Search Cells"
+            "Grid Cells", icon="&#x1f50d;"
         ))
         gr.HTML(metric_card(
             str(sum(len(v) for v in configs.values())),
-            "Config Files"
+            "Configs", icon="&#x2699;&#xfe0f;"
         ))
         status_text, status_class = runner.get_status()
-        gr.HTML(metric_card(status_badge(status_text, status_class), "Job Status"))
+        gr.HTML(metric_card(status_badge(status_text, status_class), "Job Status", icon="&#x26a1;"))
 
-    if results:
-        gr.Markdown("### Recent Results")
-        results_table = gr.Dataframe(
-            value=results_to_table(results),
-            headers=["Model", "Benchmark", "Date", "pass@1", "pass@5", "pass@10"],
-            interactive=False, wrap=True,
-        )
-    else:
-        gr.HTML(empty_state(
-            "No results yet",
-            "Run your first evaluation to see results here.",
-            "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
-        ))
-        results_table = gr.Dataframe(visible=False)
+    # Pipeline steps visualization
+    gr.HTML(pipeline_steps())
+
+    # Best result highlight + recent results table
+    with gr.Row():
+        with gr.Column(scale=1):
+            if results:
+                # Find best pass@1
+                best = None
+                best_val = 0.0
+                for r in results:
+                    p1 = r.get("results", {}).get("pass@1", 0)
+                    if isinstance(p1, float) and p1 > best_val:
+                        best_val = p1
+                        best = r
+                if best:
+                    model = best.get("config", {}).get("model_id", "?").split("/")[-1]
+                    bench = best.get("config", {}).get("benchmark", "?")
+                    gr.HTML(highlight_card(
+                        "Best pass@1",
+                        f"{best_val:.1%}",
+                        f"{model} on {bench}",
+                    ))
+            else:
+                gr.HTML(empty_state(
+                    "No results yet",
+                    "Run your first evaluation to see results here.",
+                    "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
+                    icon="&#x1f680;",
+                ))
+
+        with gr.Column(scale=3):
+            if results:
+                gr.Markdown("#### Recent Results")
+                results_table = gr.Dataframe(
+                    value=results_to_table(results),
+                    headers=["Model", "Benchmark", "Date", "pass@1", "pass@5", "pass@10"],
+                    interactive=False, wrap=True,
+                )
+            else:
+                results_table = gr.Dataframe(visible=False)
 
     refresh_btn = gr.Button("Refresh", size="sm", variant="secondary")
 
     def refresh():
         new_results = load_all_results(state)
-        st, _ = runner.get_status()
-        return results_to_table(new_results), st
+        return results_to_table(new_results)
 
-    refresh_btn.click(fn=refresh, outputs=[results_table, gr.Markdown(visible=False)])
+    refresh_btn.click(fn=refresh, outputs=[results_table])
 
 
 # ========================================================================== #
@@ -92,7 +118,7 @@ def build_home_tab(state: DashboardState, runner: JobRunner):
 def build_pipeline_tab(state: DashboardState, runner: JobRunner):
     import gradio as gr
 
-    gr.Markdown("### Pipeline Runner")
+    gr.Markdown("### Pipeline Runner\nSelect a step, pick a config, and launch. Logs stream below.")
 
     step_to_configs = {
         "Synthesize": "synthesis", "Train": "training",
@@ -169,10 +195,11 @@ def build_results_tab(state: DashboardState):
             "No evaluation results",
             "Run an evaluation to see results here.",
             "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
+            icon="&#x1f4c8;",
         ))
         return
 
-    gr.Markdown("### Results Explorer")
+    gr.Markdown("### Results Explorer\nCompare runs side-by-side. Enter row numbers below and click Compare.")
 
     results_table = gr.Dataframe(
         value=results_to_table(all_results_ref["data"]),
@@ -222,6 +249,7 @@ def build_search_tab(state: DashboardState):
             "No grid search results",
             "Run a temperature grid search to explore the (T_train, T_eval) space.",
             "averyml search --config configs/search/temperature_grid.yaml",
+            icon="&#x1f321;&#xfe0f;",
         ))
         return
 
@@ -292,6 +320,7 @@ def build_data_explorer_tab(state: DashboardState):
             "No synthesis data found",
             "Generate training data first, then come back here to explore it.",
             "averyml synthesize --config configs/synthesis/default.yaml",
+            icon="&#x1f4be;",
         ))
 
     gr.Markdown("### Data Explorer")
@@ -409,8 +438,9 @@ def build_training_monitor_tab(state: DashboardState):
             empty = _empty_figure("No trainer_state.json found")
             return empty, empty, empty_state(
                 "No training logs",
-                "Start a training job — logs appear here automatically.",
+                "Start a training job &mdash; logs appear here automatically.",
                 "averyml train --config configs/training/sft_instruct.yaml",
+                icon="&#x1f4c9;",
             )
 
         latest = max(state_files, key=lambda p: p.stat().st_mtime)
@@ -450,6 +480,7 @@ def build_export_tab(state: DashboardState):
         gr.HTML(empty_state(
             "No results to export",
             "Run evaluations first, then export results to LaTeX or CSV.",
+            icon="&#x1f4e4;",
             "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
         ))
         return
