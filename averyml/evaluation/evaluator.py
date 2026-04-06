@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from averyml.config.evaluation import EvaluationConfig
+from averyml.evaluation.benchmarks.base import Benchmark
 from averyml.evaluation.benchmarks.livecodebench import LiveCodeBench
 from averyml.evaluation.metrics import compute_pass_at_k_with_difficulty, format_metrics_table
 from averyml.evaluation.results import ResultStore
-from averyml.utils.registry import synthesis_backend_registry
+from averyml.utils.registry import benchmark_registry, synthesis_backend_registry
 
 logger = logging.getLogger(__name__)
 
@@ -23,38 +24,64 @@ class Evaluator:
         self.config = config
 
     def run(self) -> dict[str, Any]:
-        """Execute the full evaluation pipeline."""
-        benchmark = self._build_benchmark()
-        problems = benchmark.load_problems()
-        logger.info(f"Loaded {len(problems)} problems from {self.config.benchmark}")
+        """Execute the full evaluation pipeline.
 
-        # Generate solutions
-        all_outputs = self._generate_solutions(problems, benchmark)
+        If config.benchmarks is set, runs each benchmark and returns
+        combined metrics keyed by benchmark name.
+        """
+        benchmark_names = self.config.benchmarks or [self.config.benchmark]
+        all_metrics: dict[str, Any] = {}
 
-        # Evaluate
-        results_by_task, task_difficulty = self._evaluate_solutions(problems, all_outputs, benchmark)
+        for bench_name in benchmark_names:
+            logger.info(f"\n{'='*40} {bench_name} {'='*40}")
+            benchmark = self._build_benchmark(bench_name)
+            problems = benchmark.load_problems()
+            logger.info(f"Loaded {len(problems)} problems from {bench_name}")
 
-        # Compute metrics
-        metrics = compute_pass_at_k_with_difficulty(
-            results_by_task, task_difficulty, self.config.k_values
-        )
+            # Generate solutions
+            all_outputs = self._generate_solutions(problems, benchmark)
 
-        # Log summary
-        logger.info("\n" + format_metrics_table(metrics))
+            # Evaluate
+            results_by_task, task_difficulty = self._evaluate_solutions(problems, all_outputs, benchmark)
+
+            # Compute metrics
+            metrics = compute_pass_at_k_with_difficulty(
+                results_by_task, task_difficulty, self.config.k_values
+            )
+            metrics["num_problems"] = len(problems)
+            metrics["n_repeat"] = self.config.n_repeat
+            metrics["benchmark"] = bench_name
+
+            # Log summary
+            logger.info(f"\n[{bench_name}]\n" + format_metrics_table(metrics))
+
+            if len(benchmark_names) == 1:
+                all_metrics = metrics
+            else:
+                all_metrics[bench_name] = metrics
 
         # Save
         store = ResultStore(Path(self.config.output_path))
-        result_path = store.save(metrics, self.config.model_dump())
+        result_path = store.save(all_metrics, self.config.model_dump())
         logger.info(f"Results saved to {result_path}")
 
-        metrics["num_problems"] = len(problems)
-        metrics["n_repeat"] = self.config.n_repeat
-        return metrics
+        return all_metrics
 
-    def _build_benchmark(self) -> LiveCodeBench:
-        """Instantiate the benchmark."""
-        return LiveCodeBench(
-            version=self.config.benchmark,
+    def _build_benchmark(self, name: str | None = None) -> Benchmark:
+        """Instantiate a benchmark by name using the registry."""
+        name = name or self.config.benchmark
+
+        # LiveCodeBench variants need special construction (version param)
+        if name.startswith("livecodebench"):
+            return LiveCodeBench(
+                version=name,
+                max_workers=self.config.max_workers,
+                timeout_per_test=self.config.timeout_per_test,
+            )
+
+        # Use registry for all other benchmarks
+        bench_cls = benchmark_registry.get(name)
+        return bench_cls(
             max_workers=self.config.max_workers,
             timeout_per_test=self.config.timeout_per_test,
         )

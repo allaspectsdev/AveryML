@@ -18,7 +18,11 @@ class EvaluationConfig(BaseConfig):
     backend: str = Field(default="vllm", description="Inference backend: 'vllm' or 'hf'")
     benchmark: str = Field(
         default="livecodebench_v6",
-        description="Benchmark: 'livecodebench_v5' or 'livecodebench_v6'",
+        description="Primary benchmark: 'livecodebench_v5', 'livecodebench_v6', 'humaneval', 'mbpp'",
+    )
+    benchmarks: list[str] | None = Field(
+        default=None,
+        description="Run multiple benchmarks (overrides 'benchmark' if set). E.g. ['humaneval', 'mbpp']",
     )
     decoding: DecodingConfig = Field(default_factory=DecodingConfig, description="T_eval and rho_eval")
     max_tokens: int = Field(default=32768, ge=1, description="Maximum generation length")
