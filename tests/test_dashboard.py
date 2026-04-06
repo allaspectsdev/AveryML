@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from averyml.dashboard import (
+from averyml.dashboard.state import (
     DashboardState,
     list_configs,
     load_all_results,
@@ -57,7 +57,7 @@ class TestResultsToTable:
         }]
         df = results_to_table(results)
         assert len(df) == 1
-        assert df.iloc[0]["Model"] == "test/model"
+        assert df.iloc[0]["Model"] == "model"  # split("/")[-1]
         assert "55.1%" in df.iloc[0]["pass@1"]
 
 
