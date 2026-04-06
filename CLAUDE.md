@@ -1,34 +1,28 @@
-# AveryML
+# AveryML v0.2.0
 
-Production-grade implementation of Simple Self-Distillation (SSD) for improving LLM code generation. Based on the paper "Embarrassingly Simple Self-Distillation Improves Code Generation" (Apple, 2604.01193).
+Production-grade Simple Self-Distillation (SSD) pipeline for improving LLM code generation. Based on "Embarrassingly Simple Self-Distillation Improves Code Generation" (Apple, 2604.01193).
 
 ## Project Structure
 
-- `averyml/config/` - Pydantic config models with YAML I/O
-- `averyml/synthesis/` - Step 1: Sample solutions from frozen base model
-- `averyml/training/` - Step 2: SFT on raw unverified outputs
-- `averyml/evaluation/` - Step 3: Benchmark on LiveCodeBench v5/v6
-- `averyml/search/` - Grid search over (T_train, T_eval) space
-- `averyml/analysis/` - Token distribution, fork/lock, compression analysis
-- `averyml/dashboard.py` - Gradio web dashboard (5 tabs)
+- `averyml/config/` - Pydantic configs with YAML I/O (synthesis, training with LoRA, evaluation, search, experiment)
+- `averyml/synthesis/` - Step 1: Sample from frozen model (checkpointing, progress bars)
+- `averyml/training/` - Step 2: SFT with sequence packing, LoRA, flash attn fallback, checkpoint resume
+- `averyml/evaluation/` - Step 3: Benchmark on LiveCodeBench v5/v6, HumanEval, MBPP
+- `averyml/search/` - Grid search with synthesis caching (40-80% compute savings)
+- `averyml/analysis/` - Full Eq.4 decomposition, fork/lock detection, significance testing
+- `averyml/dashboard.py` - 8-tab Gradio dashboard (results, heatmaps, training monitor, LaTeX export)
 - `averyml/utils/` - Logging, I/O, registry, tracking
 - `averyml/cli.py` - Typer CLI with 8 commands + results subcommands
-- `configs/` - YAML config files for all pipeline stages
-- `tests/` - pytest test suite
 
 ## Commands
 
 ```bash
-pip install -e ".[dev]"              # Install with dev deps
-pip install -e ".[dashboard]"        # Install with dashboard deps
-pytest                                # Run tests
-
 averyml synthesize --config ...       # Step 1: Sample from frozen model
-averyml train --config ...            # Step 2: Fine-tune on samples
-averyml evaluate --config ...         # Step 3: Benchmark on LCB
-averyml search --config ...           # Temperature grid search
+averyml train --config ...            # Step 2: Fine-tune (supports LoRA, packing)
+averyml evaluate --config ...         # Step 3: Benchmark (LCB, HumanEval, MBPP)
+averyml search --config ...           # Temperature grid search (with caching)
 averyml analyze --base-model ... --ssd-model ...  # Distribution analysis
-averyml dashboard                     # Launch Gradio web dashboard
+averyml dashboard                     # Launch 8-tab Gradio web dashboard
 averyml run-pipeline --config ...     # Full pipeline end-to-end
 averyml results list                  # List saved results
 averyml results compare PATH...       # Compare result files
@@ -36,17 +30,32 @@ averyml results compare PATH...       # Compare result files
 
 ## Key Design Decisions
 
-- N=1 sample per prompt is the default (paper shows this suffices)
+- N=1 sample per prompt (paper shows this suffices)
 - NO correctness filtering in synthesis (core SSD insight)
-- DecodingConfig is shared between synthesis (T_train) and evaluation (T_eval)
-- Backend abstraction via registries: vLLM/HF for inference, HF Trainer/torchtune for training
-- Config-first: every step takes a Pydantic config, serializable to YAML
-- Dashboard is GPU-free: launches pipeline steps as subprocesses
+- DecodingConfig shared between synthesis (T_train) and evaluation (T_eval)
+- Backend abstraction via registries: vLLM/HF for inference, HF Trainer for training
+- Grid search caches synthesis outputs by T_train (saves 40-80% compute)
+- Sequence packing eliminates padding waste (3-5x throughput)
+- Full Eq.4 decomposition: support compression + within-support reshaping + alignment
+- Significance testing with bootstrap CIs and permutation tests
+
+## V2 Features
+
+- Synthesis checkpointing (resume on crash)
+- Grid search synthesis caching
+- Sequence packing for training
+- LoRA/PEFT support
+- HumanEval + MBPP benchmarks
+- Multi-benchmark evaluation
+- Full Eq.4 loss decomposition (all 3 terms)
+- Statistical significance testing
+- Training monitor dashboard tab
+- LaTeX/CSV export dashboard tab
 
 ## Registry Pattern
 
-Backends and prompt sources register via decorators in their modules. The `__init__.py` in each backends/prompts package imports the modules to trigger registration. If adding a new backend, add the import to the corresponding `__init__.py`.
+Backends, benchmarks, and prompt sources register via decorators. The `__init__.py` in each subpackage imports modules to trigger registration. When adding a new component, add the import to the corresponding `__init__.py`.
 
 ## Testing
 
-Run `pytest` from project root. Tests cover configs, filters, metrics, and grid search. GPU-dependent tests (backends, evaluator) require appropriate hardware.
+112 tests covering configs, registries, filters, metrics, grid search, results, dashboard, significance testing, and more. GPU-dependent tests require appropriate hardware.

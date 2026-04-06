@@ -805,6 +805,175 @@ def build_data_explorer_tab(state: DashboardState):
     nav_btn.click(fn=navigate, inputs=[file_picker, custom_path, page_num, page_size], outputs=[sample_table])
 
 
+def build_training_monitor_tab(state: DashboardState):
+    """Tab 7: Real-time training loss curves from HF Trainer logs."""
+    import gradio as gr
+
+    gr.Markdown("### Training Monitor\nWatch training progress in real-time from HF Trainer log files.")
+
+    with gr.Row():
+        log_path_input = gr.Textbox(
+            label="Training log directory",
+            placeholder="./checkpoints/sft_instruct",
+            value="./checkpoints",
+        )
+        load_logs_btn = gr.Button("Load / Refresh", variant="primary")
+
+    with gr.Row():
+        loss_plot = gr.Plot(label="Training Loss")
+        lr_plot = gr.Plot(label="Learning Rate Schedule")
+
+    stats_md = gr.Markdown("")
+
+    def load_training_logs(log_dir):
+        import plotly.graph_objects as go
+
+        log_path = Path(log_dir)
+        if not log_path.exists():
+            empty = go.Figure()
+            empty.add_annotation(text="Directory not found", showarrow=False, font=dict(size=16))
+            return empty, empty, f"Directory not found: {log_dir}"
+
+        # Find trainer_state.json files (HF Trainer saves these)
+        state_files = list(log_path.rglob("trainer_state.json"))
+        if not state_files:
+            empty = go.Figure()
+            empty.add_annotation(text="No trainer_state.json found", showarrow=False, font=dict(size=16))
+            return empty, empty, "No HF Trainer state files found. Start training first."
+
+        # Load the most recent one
+        latest = max(state_files, key=lambda p: p.stat().st_mtime)
+        data = json.loads(latest.read_text(encoding="utf-8"))
+        log_history = data.get("log_history", [])
+
+        if not log_history:
+            empty = go.Figure()
+            empty.add_annotation(text="No log entries yet", showarrow=False, font=dict(size=16))
+            return empty, empty, "Training started but no log entries yet."
+
+        # Extract metrics
+        steps = [e["step"] for e in log_history if "loss" in e]
+        losses = [e["loss"] for e in log_history if "loss" in e]
+        lr_steps = [e["step"] for e in log_history if "learning_rate" in e]
+        lrs = [e["learning_rate"] for e in log_history if "learning_rate" in e]
+
+        # Loss plot
+        loss_fig = go.Figure()
+        if steps:
+            loss_fig.add_trace(go.Scatter(x=steps, y=losses, mode="lines", name="Loss"))
+            loss_fig.update_layout(
+                title="Training Loss", xaxis_title="Step", yaxis_title="Loss",
+                template="plotly_white", height=350,
+            )
+
+        # LR plot
+        lr_fig = go.Figure()
+        if lr_steps:
+            lr_fig.add_trace(go.Scatter(x=lr_steps, y=lrs, mode="lines", name="LR", line=dict(color="orange")))
+            lr_fig.update_layout(
+                title="Learning Rate", xaxis_title="Step", yaxis_title="LR",
+                template="plotly_white", height=350,
+            )
+
+        current_step = log_history[-1].get("step", "?")
+        current_loss = losses[-1] if losses else "?"
+        stats = f"**Latest:** step {current_step}, loss={current_loss} | **Log file:** `{latest}`"
+
+        return loss_fig, lr_fig, stats
+
+    load_logs_btn.click(fn=load_training_logs, inputs=[log_path_input], outputs=[loss_plot, lr_plot, stats_md])
+
+
+def build_export_tab(state: DashboardState):
+    """Tab 8: Export results to LaTeX tables and CSV."""
+    import gradio as gr
+
+    gr.Markdown("### Export\nGenerate LaTeX tables and CSV files from evaluation results.")
+
+    all_results = load_all_results(state)
+    table_df = results_to_table(all_results)
+
+    results_table = gr.Dataframe(
+        value=table_df,
+        headers=["Model", "Benchmark", "Date", "pass@1", "pass@5", "pass@10", "Path"],
+        interactive=False,
+    )
+
+    with gr.Row():
+        select_indices = gr.Textbox(
+            label="Row indices to export (comma-separated)",
+            placeholder="0,1,2",
+            value="0" if all_results else "",
+        )
+        export_btn = gr.Button("Generate LaTeX", variant="primary")
+        csv_btn = gr.Button("Generate CSV")
+
+    latex_output = gr.Code(label="LaTeX Table", language=None, interactive=False)
+    csv_output = gr.Code(label="CSV", language=None, interactive=False)
+
+    def generate_latex(indices_str):
+        try:
+            indices = [int(i.strip()) for i in indices_str.split(",") if i.strip()]
+        except ValueError:
+            return "Invalid indices"
+
+        selected = [all_results[i] for i in indices if 0 <= i < len(all_results)]
+        if not selected:
+            return "No results selected"
+
+        # Build LaTeX table
+        lines = [
+            r"\begin{table}[h]",
+            r"\centering",
+            r"\caption{SSD Evaluation Results}",
+            r"\begin{tabular}{lccc}",
+            r"\toprule",
+            r"Model & pass@1 & pass@5 & pass@10 \\",
+            r"\midrule",
+        ]
+
+        for r in selected:
+            cfg = r.get("config", {})
+            res = r.get("results", {})
+            model = cfg.get("model_id", "?").split("/")[-1]
+            p1 = f"{res.get('pass@1', 0):.1%}" if isinstance(res.get("pass@1"), float) else "-"
+            p5 = f"{res.get('pass@5', 0):.1%}" if isinstance(res.get("pass@5"), float) else "-"
+            p10 = f"{res.get('pass@10', 0):.1%}" if isinstance(res.get("pass@10"), float) else "-"
+            lines.append(f"{model} & {p1} & {p5} & {p10} \\\\")
+
+        lines.extend([
+            r"\bottomrule",
+            r"\end{tabular}",
+            r"\end{table}",
+        ])
+        return "\n".join(lines)
+
+    def generate_csv(indices_str):
+        try:
+            indices = [int(i.strip()) for i in indices_str.split(",") if i.strip()]
+        except ValueError:
+            return "Invalid indices"
+
+        selected = [all_results[i] for i in indices if 0 <= i < len(all_results)]
+        if not selected:
+            return "No results selected"
+
+        lines = ["model,benchmark,pass@1,pass@5,pass@10"]
+        for r in selected:
+            cfg = r.get("config", {})
+            res = r.get("results", {})
+            model = cfg.get("model_id", "?")
+            bench = cfg.get("benchmark", "?")
+            p1 = f"{res.get('pass@1', 0):.4f}" if isinstance(res.get("pass@1"), float) else ""
+            p5 = f"{res.get('pass@5', 0):.4f}" if isinstance(res.get("pass@5"), float) else ""
+            p10 = f"{res.get('pass@10', 0):.4f}" if isinstance(res.get("pass@10"), float) else ""
+            lines.append(f"{model},{bench},{p1},{p5},{p10}")
+        return "\n".join(lines)
+
+    export_btn.click(fn=generate_latex, inputs=[select_indices], outputs=[latex_output])
+    csv_btn.click(fn=generate_csv, inputs=[select_indices], outputs=[csv_output])
+
+
 def create_app(results_dir: str = "./results", configs_dir: str = "./configs",
                search_dir: str = "./search_results") -> Any:
     """Create the Gradio Blocks app."""
@@ -827,6 +996,10 @@ def create_app(results_dir: str = "./results", configs_dir: str = "./configs",
             build_search_tab(state)
         with gr.Tab("Data Explorer"):
             build_data_explorer_tab(state)
+        with gr.Tab("Training Monitor"):
+            build_training_monitor_tab(state)
+        with gr.Tab("Export"):
+            build_export_tab(state)
         with gr.Tab("Config Editor"):
             build_config_tab(state)
 

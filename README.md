@@ -10,7 +10,7 @@
     <a href="https://arxiv.org/abs/2604.01193"><img src="https://img.shields.io/badge/paper-arXiv%3A2604.01193-b31b1b.svg" alt="Paper"></a>
     <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python"></a>
     <a href="#"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
-    <a href="#"><img src="https://img.shields.io/badge/tests-101%20passed-brightgreen.svg" alt="Tests"></a>
+    <a href="#"><img src="https://img.shields.io/badge/tests-112%20passed-brightgreen.svg" alt="Tests"></a>
     <a href="#docker"><img src="https://img.shields.io/badge/docker-ready-2496ED.svg" alt="Docker"></a>
   </p>
 </p>
