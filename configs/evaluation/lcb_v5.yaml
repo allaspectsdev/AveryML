@@ -1,4 +1,5 @@
 model_id: ./checkpoints/sft_instruct/final_checkpoint
+backend: vllm
 benchmark: livecodebench_v5
 decoding:
   temperature: 0.6

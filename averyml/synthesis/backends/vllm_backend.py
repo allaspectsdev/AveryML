@@ -59,7 +59,8 @@ class VLLMSynthesisBackend(SynthesisBackend):
 
     @property
     def tokenizer(self):
-        assert self._tokenizer is not None, "Call load_model() first"
+        if self._tokenizer is None:
+            raise RuntimeError("Call load_model() before accessing tokenizer")
         return self._tokenizer
 
     def cleanup(self) -> None:

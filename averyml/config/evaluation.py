@@ -15,6 +15,7 @@ class EvaluationConfig(BaseConfig):
     """
 
     model_id: str = Field(description="Fine-tuned model path or HF model ID")
+    backend: str = Field(default="vllm", description="Inference backend: 'vllm' or 'hf'")
     benchmark: str = Field(
         default="livecodebench_v6",
         description="Benchmark: 'livecodebench_v5' or 'livecodebench_v6'",

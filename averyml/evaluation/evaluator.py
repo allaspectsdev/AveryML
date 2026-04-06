@@ -11,6 +11,7 @@ from averyml.config.evaluation import EvaluationConfig
 from averyml.evaluation.benchmarks.livecodebench import LiveCodeBench
 from averyml.evaluation.metrics import compute_pass_at_k_with_difficulty, format_metrics_table
 from averyml.evaluation.results import ResultStore
+from averyml.utils.registry import synthesis_backend_registry
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class Evaluator:
         logger.info(f"Loaded {len(problems)} problems from {self.config.benchmark}")
 
         # Generate solutions
-        all_outputs = self._generate_solutions(problems)
+        all_outputs = self._generate_solutions(problems, benchmark)
 
         # Evaluate
         results_by_task, task_difficulty = self._evaluate_solutions(problems, all_outputs, benchmark)
@@ -58,20 +59,17 @@ class Evaluator:
             timeout_per_test=self.config.timeout_per_test,
         )
 
-    def _generate_solutions(self, problems: list[dict]) -> list[list[str]]:
-        """Generate n_repeat solutions per problem using vLLM."""
-        from transformers import AutoTokenizer
-        from vllm import LLM, SamplingParams
+    def _generate_solutions(self, problems: list[dict], benchmark: LiveCodeBench) -> list[list[str]]:
+        """Generate n_repeat solutions per problem using the configured backend."""
+        # Reuse synthesis backend infrastructure for generation
+        backend_cls = synthesis_backend_registry.get(self.config.backend)
+        if self.config.backend == "vllm":
+            backend = backend_cls(tensor_parallel_size=self.config.tensor_parallel_size)
+        else:
+            backend = backend_cls()
 
-        logger.info(f"Loading model: {self.config.model_id}")
-        llm = LLM(
-            model=self.config.model_id,
-            tensor_parallel_size=self.config.tensor_parallel_size,
-        )
-        tokenizer = AutoTokenizer.from_pretrained(self.config.model_id)
-
-        benchmark = LiveCodeBench(version=self.config.benchmark)
-        stop_token_ids = [tokenizer.eos_token_id] if tokenizer.eos_token_id is not None else []
+        logger.info(f"Loading model: {self.config.model_id} (backend={self.config.backend})")
+        backend.load_model(self.config.model_id)
 
         # all_outputs[problem_idx][repeat_idx] = model output text
         all_outputs: list[list[str]] = [[] for _ in problems]
@@ -79,25 +77,15 @@ class Evaluator:
         for i in range(self.config.n_repeat):
             seed = self.config.seeds[i % len(self.config.seeds)]
 
-            prompts = [benchmark.format_prompt(p, tokenizer) for p in problems]
-
-            sampling_params = SamplingParams(
-                max_tokens=self.config.max_tokens,
-                seed=seed,
-                stop_token_ids=stop_token_ids,
-                temperature=self.config.decoding.temperature,
-                top_k=self.config.decoding.top_k,
-                top_p=self.config.decoding.top_p,
-                min_p=self.config.decoding.min_p,
-            )
+            prompts = [benchmark.format_prompt(p, backend.tokenizer) for p in problems]
 
             logger.info(f"Generating solutions (repeat {i + 1}/{self.config.n_repeat})...")
-            outputs = llm.generate(prompts, sampling_params)
-            texts = [o.outputs[0].text for o in outputs]
+            texts = backend.generate(prompts, self.config.decoding, self.config.max_tokens, seed)
 
             for j, text in enumerate(texts):
                 all_outputs[j].append(text)
 
+        backend.cleanup()
         return all_outputs
 
     def _evaluate_solutions(

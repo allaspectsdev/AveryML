@@ -20,9 +20,14 @@ def _load_config(cls, config_path: Path | None, overrides: dict):
     """Load a config from YAML and apply CLI overrides."""
     if config_path is not None:
         cfg = cls.from_yaml(config_path)
-    else:
-        cfg = cls()
-    return cfg.merge({k: v for k, v in overrides.items() if v is not None})
+        return cfg.merge({k: v for k, v in overrides.items() if v is not None})
+
+    # No config file — try to build from overrides alone
+    try:
+        return cls.model_validate({k: v for k, v in overrides.items() if v is not None})
+    except Exception as e:
+        typer.echo(f"Error: {e}\n\nProvide a --config YAML file or all required options.", err=True)
+        raise typer.Exit(1)
 
 
 # --------------------------------------------------------------------------- #
