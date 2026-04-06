@@ -4,6 +4,9 @@
     <strong>Make your LLM better at code by feeding it its own homework — no answers required.</strong>
   </p>
   <p align="center">
+    <em>Inspired by Oleg</em>
+  </p>
+  <p align="center">
     <a href="https://arxiv.org/abs/2604.01193"><img src="https://img.shields.io/badge/paper-arXiv%3A2604.01193-b31b1b.svg" alt="Paper"></a>
     <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python"></a>
     <a href="#"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
