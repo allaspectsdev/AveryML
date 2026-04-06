@@ -1,0 +1,25 @@
+model_id: "Qwen/Qwen3-4B-Instruct-2507"
+dataset_path: ./data/synthesis/synthesis.jsonl
+backend: hf_trainer
+output_dir: ./checkpoints/sft_instruct
+
+learning_rate: 5.0e-6
+optimizer: adamw
+weight_decay: 0.01
+lr_scheduler_type: cosine
+
+global_batch_size: 32
+gradient_accumulation_steps: 4
+max_seq_length: 65536
+
+num_train_iterations: 2500
+warmup_iterations: 250
+
+bf16: true
+gradient_checkpointing: true
+
+save_steps: 500
+logging_steps: 10
+wandb_project: null
+wandb_run_name: null
+seed: 42

@@ -1,0 +1,16 @@
+model_id: "Qwen/Qwen3-4B-Instruct-2507"
+prompt_source: rstarcoder
+prompt_dataset: ""
+max_prompts: null
+n_samples: 1
+decoding:
+  temperature: 1.5
+  top_k: 10
+  top_p: 0.95
+  min_p: 0.0
+backend: vllm
+max_tokens: 32768
+tensor_parallel_size: 1
+output_path: ./data/synthesis
+output_format: jsonl
+seed: 42

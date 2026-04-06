@@ -1,0 +1,16 @@
+base_model_id: "Qwen/Qwen3-4B-Instruct-2507"
+prompt_source: rstarcoder
+prompt_dataset: ""
+
+t_train_values: [0.5, 0.7, 1.0, 1.5, 2.0]
+t_eval_values: [0.6, 0.8, 0.9, 1.0, 1.1, 1.2, 1.5]
+truncation_configs: null
+
+n_samples: 1
+train_iterations: 2500
+warmup_iterations: 250
+n_repeat: 20
+benchmark: livecodebench_v6
+
+max_parallel_jobs: 1
+output_path: ./search_results
