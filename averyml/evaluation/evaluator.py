@@ -9,10 +9,8 @@ from typing import Any
 
 from averyml.config.evaluation import EvaluationConfig
 from averyml.evaluation.benchmarks.livecodebench import LiveCodeBench
-from averyml.evaluation.benchmarks.livecodebench_utils import has_code
 from averyml.evaluation.metrics import compute_pass_at_k_with_difficulty, format_metrics_table
 from averyml.evaluation.results import ResultStore
-from averyml.utils.registry import benchmark_registry
 
 logger = logging.getLogger(__name__)
 

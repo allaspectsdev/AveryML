@@ -20,7 +20,7 @@ class TorchtuneTrainerBackend(TrainingBackend):
     Requires torchtune to be installed: pip install averyml[torchtune]
     """
 
-    def train(self, config: TrainingConfig, dataset) -> Path:
+    def train(self, config: TrainingConfig, dataset, tokenizer=None) -> Path:
         raise NotImplementedError(
             "torchtune backend is not yet implemented. "
             "Use 'hf_trainer' backend instead, or contribute an implementation."

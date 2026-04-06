@@ -42,7 +42,7 @@ def synthesize(
 ):
     """Step 1: Sample solutions from a frozen base model."""
     setup_logging(log_level)
-    from averyml.config.synthesis import DecodingConfig, SynthesisConfig
+    from averyml.config.synthesis import SynthesisConfig
     from averyml.synthesis.sampler import Sampler
 
     overrides: dict = {}

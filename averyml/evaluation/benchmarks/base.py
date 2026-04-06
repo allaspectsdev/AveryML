@@ -15,6 +15,11 @@ class Benchmark(ABC):
         ...
 
     @abstractmethod
+    def format_prompt(self, problem: dict, tokenizer: Any = None) -> str:
+        """Format a problem into the prompt string for generation."""
+        ...
+
+    @abstractmethod
     def evaluate_solution(self, problem: dict, code: str, timeout: float) -> dict:
         """Evaluate a single solution against test cases."""
         ...

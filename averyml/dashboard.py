@@ -573,9 +573,13 @@ Results will appear here automatically after refresh.
         diagonal_toggle = gr.Checkbox(label="Show diagonal band only (T_eff 0.8-1.6)", value=False)
         refresh_btn = gr.Button("Refresh", size="sm")
 
+    # Build initial figures for display
+    init_hm = build_temperature_heatmap(df, default_metric) if default_metric else None
+    init_tc, _ = build_teff_curve(df, default_metric) if default_metric else (None, {})
+
     with gr.Row():
-        heatmap = gr.Plot(label="Temperature Heatmap")
-        teff_plot = gr.Plot(label="T_eff Curve")
+        heatmap = gr.Plot(value=init_hm, label="Temperature Heatmap")
+        teff_plot = gr.Plot(value=init_tc, label="T_eff Curve")
 
     stats_md = gr.Markdown("")
 
@@ -605,13 +609,6 @@ Results will appear here automatically after refresh.
     metric_selector.change(fn=update_plots, inputs=[metric_selector, diagonal_toggle], outputs=[heatmap, teff_plot, stats_md])
     diagonal_toggle.change(fn=update_plots, inputs=[metric_selector, diagonal_toggle], outputs=[heatmap, teff_plot, stats_md])
     refresh_btn.click(fn=update_plots, inputs=[metric_selector, diagonal_toggle], outputs=[heatmap, teff_plot, stats_md])
-
-    # Initial render
-    if default_metric:
-        hm_fig = build_temperature_heatmap(df, default_metric)
-        tc_fig, init_stats = build_teff_curve(df, default_metric)
-        heatmap.value = hm_fig
-        teff_plot.value = tc_fig
 
 
 def build_config_tab(state: DashboardState):
@@ -719,5 +716,13 @@ def create_app(results_dir: str = "./results", configs_dir: str = "./configs",
 def launch(results_dir: str = "./results", configs_dir: str = "./configs",
            search_dir: str = "./search_results", port: int = 7860, share: bool = False):
     """Launch the dashboard server."""
+    try:
+        import gradio  # noqa: F401
+    except ImportError:
+        raise SystemExit(
+            "Gradio is required for the dashboard. Install it with:\n"
+            "  pip install averyml[dashboard]"
+        )
+
     app = create_app(results_dir, configs_dir, search_dir)
     app.launch(server_port=port, share=share)
