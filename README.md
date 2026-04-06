@@ -49,6 +49,7 @@ Apple's [ml-ssd](https://github.com/apple/ml-ssd) repo is evaluation-only. Avery
 | Distribution analysis | - | Fork/lock detection, Eq.4 decomposition |
 | Config system | None | Pydantic + YAML with CLI overrides |
 | CLI | Single script | 7 subcommands |
+| Web dashboard | - | Gradio UI with interactive Plotly charts |
 | Experiment tracking | - | W&B integration |
 
 ---
@@ -57,7 +58,7 @@ Apple's [ml-ssd](https://github.com/apple/ml-ssd) repo is evaluation-only. Avery
 
 ```bash
 # Clone & install
-git clone https://github.com/your-username/AveryML.git
+git clone https://github.com/allaspectsdev/AveryML.git
 cd AveryML
 pip install -e ".[all]"
 
@@ -91,6 +92,22 @@ The paper's key insight: performance is governed by **T_eff = T_train x T_eval**
 ```bash
 averyml search --config configs/search/temperature_grid.yaml --diagonal-only
 ```
+
+### Web Dashboard
+
+Why squint at JSON files when you can have interactive charts? AveryML ships with a Gradio-powered dashboard for browsing results, comparing runs, and exploring temperature grids visually.
+
+```bash
+pip install averyml[dashboard]
+averyml dashboard
+```
+
+**5 tabs:**
+- **Home** — At-a-glance project status, recent results, job monitor
+- **Pipeline** — Launch synthesis/train/evaluate from the browser with config selection and live logs
+- **Results** — Side-by-side run comparison with interactive Plotly charts and per-difficulty breakdowns
+- **Temperature Search** — Interactive heatmap of (T_train, T_eval) grid + T_eff curve with quadratic fit
+- **Config Editor** — Edit YAML configs with live Pydantic validation and auto-generated field docs
 
 ---
 

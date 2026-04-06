@@ -194,6 +194,23 @@ def search(
 
 
 # --------------------------------------------------------------------------- #
+# dashboard
+# --------------------------------------------------------------------------- #
+@app.command()
+def dashboard(
+    results_dir: Annotated[str, typer.Option(help="Results directory")] = "./results",
+    configs_dir: Annotated[str, typer.Option(help="Configs directory")] = "./configs",
+    search_dir: Annotated[str, typer.Option(help="Search results directory")] = "./search_results",
+    port: Annotated[int, typer.Option(help="Server port")] = 7860,
+    share: Annotated[bool, typer.Option(help="Create public Gradio share link")] = False,
+):
+    """Launch the interactive web dashboard for exploring results and managing experiments."""
+    from averyml.dashboard import launch
+
+    launch(results_dir=results_dir, configs_dir=configs_dir, search_dir=search_dir, port=port, share=share)
+
+
+# --------------------------------------------------------------------------- #
 # analyze
 # --------------------------------------------------------------------------- #
 @app.command()
