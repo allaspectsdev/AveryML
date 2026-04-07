@@ -1,38 +1,37 @@
-# Full pipeline for Qwen3-4B-Instruct — matches paper Table 3
-# Expected result: +7.5pp pass@1 on LCB v6
+# Qwen3-4B-Instruct — Paper Table 3: T_train=2.0, T_eval=1.1, top-k=10
+# Expected: +7.5pp pass@1 on LCB v6 (34.8% -> 42.4%)
 name: qwen3_4b_instruct_ssd
 
 synthesis:
   model_id: "Qwen/Qwen3-4B-Instruct-2507"
   prompt_source: rstarcoder
   prompt_dataset: ""
-  max_prompts: null
   n_samples: 1
   decoding:
-    temperature: 2.0      # Paper Table 3
-    top_k: 10             # Paper Table 3
+    temperature: 2.0
+    top_k: 10
     top_p: 0.95
     min_p: 0.0
   backend: vllm
-  max_tokens: 131072      # Paper: 128K
+  max_tokens: 131072
   tensor_parallel_size: 4
-  output_path: ./data/synthesis
+  output_path: ./data/synthesis/qwen3_4b_instruct
   output_format: jsonl
   checkpoint_every: 1000
   seed: 42
 
 training:
   model_id: "Qwen/Qwen3-4B-Instruct-2507"
-  dataset_path: ./data/synthesis/synthesis.jsonl
+  dataset_path: ./data/synthesis/qwen3_4b_instruct/synthesis.jsonl
   backend: hf_trainer
-  output_dir: ./checkpoints/qwen3_4b_ssd
+  output_dir: ./checkpoints/qwen3_4b_instruct_ssd
   learning_rate: 5.0e-6
   optimizer: adamw
   weight_decay: 0.01
   lr_scheduler_type: cosine
   global_batch_size: 32
   gradient_accumulation_steps: 4
-  max_seq_length: 65536   # Paper Section 3.1
+  max_seq_length: 65536
   num_train_iterations: 2500
   warmup_iterations: 250
   bf16: true
@@ -43,11 +42,11 @@ training:
   seed: 42
 
 evaluation:
-  model_id: ./checkpoints/qwen3_4b_ssd/final_checkpoint
+  model_id: ./checkpoints/qwen3_4b_instruct_ssd/final_checkpoint
   backend: vllm
   benchmark: livecodebench_v6
   decoding:
-    temperature: 1.1      # Paper: T_eval=1.1 for best result
+    temperature: 1.1
     top_k: 20
     top_p: 0.95
     min_p: 0.0
@@ -55,7 +54,7 @@ evaluation:
   n_repeat: 20
   k_values: [1, 5, 10]
   tensor_parallel_size: 4
-  output_path: ./results
+  output_path: ./results/qwen3_4b_instruct
   seeds: [0, 1234, 1234, 1234]
   timeout_per_test: 6.0
   max_workers: 32

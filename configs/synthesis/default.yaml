@@ -1,16 +1,18 @@
+# Default synthesis config — matches paper's best Qwen3-4B-Instruct setup (Table 3)
 model_id: "Qwen/Qwen3-4B-Instruct-2507"
 prompt_source: rstarcoder
 prompt_dataset: ""
 max_prompts: null
 n_samples: 1
 decoding:
-  temperature: 1.5
-  top_k: 10
+  temperature: 2.0      # Paper: T_train=2.0 for best result
+  top_k: 10             # Paper: top-k=10
   top_p: 0.95
   min_p: 0.0
 backend: vllm
-max_tokens: 32768
+max_tokens: 131072      # Paper: 128K max sequence length
 tensor_parallel_size: 1
 output_path: ./data/synthesis
 output_format: jsonl
+checkpoint_every: 1000
 seed: 42

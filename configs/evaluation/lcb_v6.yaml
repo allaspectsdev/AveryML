@@ -1,12 +1,13 @@
+# LCB v6 evaluation — matches paper's best Qwen3-4B-Instruct eval config
 model_id: ./checkpoints/sft_instruct/final_checkpoint
 backend: vllm
 benchmark: livecodebench_v6
 decoding:
-  temperature: 0.6
+  temperature: 1.1      # Paper: T_eval=1.1 for best result
   top_k: 20
   top_p: 0.95
   min_p: 0.0
-max_tokens: 32768
+max_tokens: 131072      # Paper: 128K max
 n_repeat: 20
 k_values: [1, 5, 10]
 tensor_parallel_size: 1

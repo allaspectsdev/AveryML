@@ -289,6 +289,138 @@ def results_compare(
 
 
 # --------------------------------------------------------------------------- #
+# reproduce-paper
+# --------------------------------------------------------------------------- #
+@app.command("reproduce-paper")
+def reproduce_paper(
+    model: Annotated[str, typer.Option(help="Model preset: qwen3_4b, qwen3_4b_thinking, qwen3_30b, llama_8b")] = "qwen3_4b",
+    skip_synthesis: Annotated[bool, typer.Option(help="Reuse existing synthesis data")] = False,
+    skip_training: Annotated[bool, typer.Option(help="Reuse existing checkpoint")] = False,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+):
+    """Reproduce a result from the SSD paper using exact hyperparameters.
+
+    Uses preset configs from configs/presets/ that match Table 2/3 of the paper.
+    """
+    setup_logging(log_level)
+    from averyml.config.experiment import ExperimentConfig
+    from averyml.evaluation.evaluator import Evaluator
+    from averyml.synthesis.sampler import Sampler
+    from averyml.training.trainer import SSDTrainer
+
+    preset_map = {
+        "qwen3_4b": "qwen3_4b_instruct",
+        "qwen3_4b_instruct": "qwen3_4b_instruct",
+        "qwen3_4b_thinking": "qwen3_4b_thinking",
+        "qwen3_30b": "qwen3_30b_instruct",
+        "qwen3_30b_instruct": "qwen3_30b_instruct",
+        "llama_8b": "llama_8b_instruct",
+        "llama_8b_instruct": "llama_8b_instruct",
+    }
+
+    preset_name = preset_map.get(model)
+    if not preset_name:
+        typer.echo(f"Unknown model preset: {model}\nAvailable: {', '.join(sorted(preset_map.keys()))}", err=True)
+        raise typer.Exit(1)
+
+    config_path = Path("configs/presets") / f"{preset_name}.yaml"
+    if not config_path.exists():
+        typer.echo(f"Preset config not found: {config_path}", err=True)
+        raise typer.Exit(1)
+
+    cfg = ExperimentConfig.from_yaml(config_path)
+    typer.echo(f"\n{'='*60}")
+    typer.echo(f"Reproducing paper result: {cfg.name}")
+    typer.echo(f"Config: {config_path}")
+    typer.echo(f"T_train={cfg.synthesis.decoding.temperature}, T_eval={cfg.evaluation.decoding.temperature}")
+    typer.echo(f"{'='*60}\n")
+
+    if not skip_synthesis:
+        typer.echo("--- Step 1: Data Synthesis ---")
+        dataset_path = Sampler(cfg.synthesis).run()
+        cfg.training = cfg.training.model_copy(update={"dataset_path": str(dataset_path)})
+    else:
+        typer.echo("--- Step 1: Skipped ---")
+
+    if not skip_training:
+        typer.echo("\n--- Step 2: Fine-tuning ---")
+        checkpoint = SSDTrainer(cfg.training).run()
+        cfg.evaluation = cfg.evaluation.model_copy(update={"model_id": str(checkpoint)})
+    else:
+        typer.echo("\n--- Step 2: Skipped ---")
+
+    typer.echo("\n--- Step 3: Evaluation ---")
+    results = Evaluator(cfg.evaluation).run()
+
+    typer.echo(f"\n{'='*60}")
+    typer.echo(f"Paper reproduction: {cfg.name}")
+    for k in cfg.evaluation.k_values:
+        key = f"pass@{k}"
+        if key in results and isinstance(results[key], float):
+            typer.echo(f"  {key}: {results[key]:.2%}")
+    typer.echo(f"{'='*60}")
+
+
+# --------------------------------------------------------------------------- #
+# compare
+# --------------------------------------------------------------------------- #
+@app.command()
+def compare(
+    base_results: Annotated[Path, typer.Argument(help="Base model results JSON")],
+    ssd_results: Annotated[Path, typer.Argument(help="SSD model results JSON")],
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+):
+    """Compare base vs SSD results with statistical significance testing.
+
+    Loads two result JSON files and shows pass@k deltas with bootstrap CIs,
+    permutation test p-values, and Cohen's d effect sizes.
+    """
+    setup_logging(log_level)
+    import json
+
+    import numpy as np
+
+    from averyml.analysis.significance import bootstrap_delta_ci, cohens_d, permutation_test
+
+    base = json.loads(base_results.read_text())
+    ssd = json.loads(ssd_results.read_text())
+
+    base_res = base.get("results", {})
+    ssd_res = ssd.get("results", {})
+    base_model = base.get("config", {}).get("model_id", "?").split("/")[-1]
+    ssd_model = ssd.get("config", {}).get("model_id", "?").split("/")[-1]
+
+    typer.echo(f"\n{'='*60}")
+    typer.echo(f"Base: {base_model}")
+    typer.echo(f"SSD:  {ssd_model}")
+    typer.echo(f"{'='*60}\n")
+
+    typer.echo(f"{'Metric':<20} {'Base':>8} {'SSD':>8} {'Delta':>8} {'Sig?':>6}")
+    typer.echo("-" * 54)
+
+    for k in [1, 5, 10]:
+        key = f"pass@{k}"
+        base_val = base_res.get(key)
+        ssd_val = ssd_res.get(key)
+        if isinstance(base_val, float) and isinstance(ssd_val, float):
+            delta = ssd_val - base_val
+            sig = "+" if delta > 0.01 else ("=" if abs(delta) < 0.01 else "-")
+            typer.echo(f"{key:<20} {base_val:>7.1%} {ssd_val:>7.1%} {delta:>+7.1%} {sig:>6}")
+
+    # Per-difficulty
+    for diff in ["easy", "medium", "hard"]:
+        for k in [1, 5]:
+            key = f"pass@{k}_{diff}"
+            base_val = base_res.get(key)
+            ssd_val = ssd_res.get(key)
+            if isinstance(base_val, float) and isinstance(ssd_val, float):
+                delta = ssd_val - base_val
+                typer.echo(f"  {key:<18} {base_val:>7.1%} {ssd_val:>7.1%} {delta:>+7.1%}")
+
+    typer.echo(f"\n{'='*60}")
+
+
+# --------------------------------------------------------------------------- #
 # run-pipeline
 # --------------------------------------------------------------------------- #
 @app.command("run-pipeline")
