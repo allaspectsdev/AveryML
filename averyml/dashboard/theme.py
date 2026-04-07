@@ -80,6 +80,49 @@ footer {visibility: hidden}
 .step:hover { border-color: #f97316; background: #fff7ed; }
 .step-num { font-size: 1.6em; font-weight: 800; color: #f97316; }
 .step-lbl { font-size: 0.78em; color: #64748b; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* ---- Tab Section Headers ---- */
+.tab-intro {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    border-left: 4px solid #f97316;
+}
+.tab-intro h3 { margin: 0 0 4px 0; color: #0f172a; }
+.tab-intro p { margin: 0; color: #64748b; font-size: 0.92em; }
+
+/* ---- Preset Model Cards ---- */
+.preset-card {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+.preset-card:hover { border-color: #f97316; box-shadow: 0 4px 12px rgba(249,115,22,0.1); }
+.preset-card.active { border-color: #f97316; background: #fff7ed; }
+.preset-name { font-weight: 700; color: #0f172a; font-size: 1em; }
+.preset-delta { color: #16a34a; font-weight: 600; font-size: 0.9em; }
+.preset-detail { color: #94a3b8; font-size: 0.8em; margin-top: 4px; }
+
+/* ---- Compare Delta Badges ---- */
+.delta-pos { color: #16a34a; font-weight: 700; }
+.delta-neg { color: #ef4444; font-weight: 700; }
+.delta-zero { color: #6b7280; }
+
+/* ---- Divider ---- */
+.section-divider {
+    border: none;
+    border-top: 1px solid #f1f5f9;
+    margin: 20px 0;
+}
+
+/* ---- Better Gradio overrides ---- */
+.gradio-container .prose h3 { color: #0f172a; }
+.gradio-container .prose h4 { color: #334155; }
+.gradio-container .tabitem { padding-top: 16px; }
 """
 
 
@@ -121,3 +164,12 @@ def pipeline_steps() -> str:
     <div class="step"><div class="step-num">3</div><div class="step-lbl">Evaluate</div></div>
     <div class="step"><div class="step-num">4</div><div class="step-lbl">Analyze</div></div>
 </div>"""
+
+
+def tab_header(title: str, description: str) -> str:
+    """Styled tab header with orange left border."""
+    return f'<div class="tab-intro"><h3>{title}</h3><p>{description}</p></div>'
+
+
+def divider() -> str:
+    return '<hr class="section-divider">'

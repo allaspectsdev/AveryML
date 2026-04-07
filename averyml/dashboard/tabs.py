@@ -27,8 +27,8 @@ from averyml.dashboard.state import (
     get_config_class,
 )
 from averyml.dashboard.theme import (
-    empty_state, hero_banner, highlight_card, metric_card,
-    pipeline_steps, status_badge,
+    divider, empty_state, hero_banner, highlight_card, metric_card,
+    pipeline_steps, status_badge, tab_header,
 )
 
 
@@ -118,7 +118,7 @@ def build_home_tab(state: DashboardState, runner: JobRunner):
 def build_pipeline_tab(state: DashboardState, runner: JobRunner):
     import gradio as gr
 
-    gr.Markdown("### Pipeline Runner\nSelect a step, pick a config, and launch. Logs stream below.")
+    gr.HTML(tab_header("Pipeline Runner", "Select a step, pick a config, and launch. Logs stream below."))
 
     step_to_configs = {
         "Synthesize": "synthesis", "Train": "training",
@@ -199,7 +199,7 @@ def build_results_tab(state: DashboardState):
         ))
         return
 
-    gr.Markdown("### Results Explorer\nCompare runs side-by-side. Enter row numbers below and click Compare.")
+    gr.HTML(tab_header("Results Explorer", "Compare runs side-by-side. Enter row numbers below and click Compare."))
 
     results_table = gr.Dataframe(
         value=results_to_table(all_results_ref["data"]),
@@ -253,7 +253,7 @@ def build_search_tab(state: DashboardState):
         ))
         return
 
-    gr.Markdown("### Temperature Search Visualizer")
+    gr.HTML(tab_header("Temperature Search", "Explore the (T_train, T_eval) grid &mdash; find the optimal T_eff for your model."))
 
     available_metrics = [c for c in df.columns if c.startswith("pass@")]
     default_metric = "pass@1" if "pass@1" in available_metrics else (available_metrics[0] if available_metrics else "")
@@ -323,7 +323,7 @@ def build_data_explorer_tab(state: DashboardState):
             icon="&#x1f4be;",
         ))
 
-    gr.Markdown("### Data Explorer")
+    gr.HTML(tab_header("Data Explorer", "Browse synthesized training data. Inspect samples before training."))
 
     with gr.Row():
         file_picker = gr.Dropdown(choices=jsonl_files, label="Dataset File", interactive=True,
@@ -412,7 +412,7 @@ def _samples_to_rows(samples: list[dict], start: int, count: int) -> list[dict]:
 def build_training_monitor_tab(state: DashboardState):
     import gradio as gr
 
-    gr.Markdown("### Training Monitor")
+    gr.HTML(tab_header("Training Monitor", "Watch training progress. Loss curves and LR schedule from HF Trainer logs."))
 
     with gr.Row():
         log_path_input = gr.Textbox(label="Checkpoint directory", value="./checkpoints",
@@ -462,10 +462,6 @@ def build_training_monitor_tab(state: DashboardState):
 
     load_btn.click(fn=load_logs, inputs=[log_path_input], outputs=[loss_plot, lr_plot, stats_md])
 
-    # Auto-refresh note
-    gr.Markdown("*Click Refresh to update. Training logs are read from HF Trainer's `trainer_state.json`.*",
-                elem_classes=["status-idle"])
-
 
 # ========================================================================== #
 # Tab 7: Reproduce Paper
@@ -503,13 +499,27 @@ def build_reproduce_tab(state: DashboardState, runner: JobRunner):
     """Tab 7: One-click paper reproduction."""
     import gradio as gr
 
-    gr.Markdown(
-        "### Reproduce Paper Results\n"
-        "Select a model from the paper, review the hyperparameters, and click Run. "
+    gr.HTML(tab_header(
+        "Reproduce Paper Results",
+        "Select a model, review hyperparameters, click Run. "
         "Uses exact configs from Table 2/3 of the SSD paper."
-    )
+    ))
 
     model_names = list(PAPER_PRESETS.keys())
+
+    # Compute initial values for first preset
+    init_preset = PAPER_PRESETS[model_names[0]]
+    init_info = (
+        f"**Expected:** {init_preset.get('expected', '?')}\n\n"
+        f"| Parameter | Value |\n|---|---|\n"
+        f"| T_train | {init_preset.get('t_train', '?')} |\n"
+        f"| T_eval | {init_preset.get('t_eval', '?')} |\n"
+        f"| top-k | {init_preset.get('top_k', '?')} |\n"
+        f"| Iterations | {init_preset.get('iterations', '?')} |\n"
+        f"| Hardware | {init_preset.get('gpus', '?')} |"
+    )
+    init_config_path = state.configs_dir / init_preset.get("config", "")
+    init_preview = init_config_path.read_text(encoding="utf-8") if init_config_path.exists() else ""
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -518,8 +528,7 @@ def build_reproduce_tab(state: DashboardState, runner: JobRunner):
                 label="Model (from paper)",
             )
 
-            # Info card
-            info_md = gr.Markdown("")
+            info_md = gr.Markdown(value=init_info)
 
             with gr.Row():
                 skip_synth = gr.Checkbox(label="Skip synthesis", value=False)
@@ -528,7 +537,7 @@ def build_reproduce_tab(state: DashboardState, runner: JobRunner):
             run_btn = gr.Button("Reproduce This Result", variant="primary", size="lg")
 
         with gr.Column(scale=2):
-            config_preview = gr.Code(label="Preset Config", language="yaml", interactive=False, lines=25)
+            config_preview = gr.Code(value=init_preview, label="Preset Config", language="yaml", interactive=False, lines=25)
             status_md = gr.Markdown("")
             log_output = gr.Code(label="Logs", language=None, interactive=False, lines=18)
             poll_btn = gr.Button("Refresh Logs", size="sm")
@@ -567,11 +576,6 @@ def build_reproduce_tab(state: DashboardState, runner: JobRunner):
     run_btn.click(fn=launch_reproduce, inputs=[model_picker, skip_synth, skip_train], outputs=[status_md, log_output])
     poll_btn.click(fn=poll_logs, outputs=[log_output, status_md])
 
-    # Load initial preset
-    app_load_info, app_load_preview = show_preset(model_names[0])
-    info_md.value = app_load_info
-    config_preview.value = app_load_preview
-
 
 # ========================================================================== #
 # Tab 8: Compare
@@ -592,11 +596,10 @@ def build_compare_tab(state: DashboardState):
         ))
         return
 
-    gr.Markdown(
-        "### Compare Base vs SSD\n"
-        "Select a base result and an SSD result to see pass@k deltas "
-        "with per-difficulty breakdowns."
-    )
+    gr.HTML(tab_header(
+        "Compare Base vs SSD",
+        "Select a base and SSD result to see pass@k deltas with per-difficulty breakdowns and charts."
+    ))
 
     # Build dropdown choices
     choices = []
@@ -696,12 +699,12 @@ def build_export_tab(state: DashboardState):
         gr.HTML(empty_state(
             "No results to export",
             "Run evaluations first, then export results to LaTeX or CSV.",
-            icon="&#x1f4e4;",
             "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
+            icon="&#x1f4e4;",
         ))
         return
 
-    gr.Markdown("### Export Results")
+    gr.HTML(tab_header("Export Results", "Generate LaTeX tables and CSV for your paper. Copy-paste ready for Overleaf."))
 
     results_table = gr.Dataframe(
         value=results_to_table(all_results),
@@ -779,7 +782,7 @@ def build_config_tab(state: DashboardState):
     all_configs = list_configs(state)
     flat_list = [f for cat_files in sorted(all_configs.values()) for f in cat_files]
 
-    gr.Markdown("### Config Editor")
+    gr.HTML(tab_header("Config Editor", "View, edit, and validate YAML configs with live feedback."))
 
     with gr.Row():
         with gr.Column(scale=1):
