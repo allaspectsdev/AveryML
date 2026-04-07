@@ -468,7 +468,223 @@ def build_training_monitor_tab(state: DashboardState):
 
 
 # ========================================================================== #
-# Tab 7: Export
+# Tab 7: Reproduce Paper
+# ========================================================================== #
+
+PAPER_PRESETS = {
+    "Qwen3-4B-Instruct": {
+        "config": "presets/qwen3_4b_instruct.yaml",
+        "expected": "+7.5pp pass@1 on LCB v6 (34.8% -> 42.4%)",
+        "t_train": "2.0", "t_eval": "1.1", "top_k": "10",
+        "iterations": "2500", "gpus": "1-4x A100",
+    },
+    "Qwen3-4B-Thinking": {
+        "config": "presets/qwen3_4b_thinking.yaml",
+        "expected": "+3.3pp pass@1 on LCB v6",
+        "t_train": "1.5", "t_eval": "0.6", "top_k": "10",
+        "iterations": "300", "gpus": "1-4x A100",
+    },
+    "Qwen3-30B-Instruct": {
+        "config": "presets/qwen3_30b_instruct.yaml",
+        "expected": "+12.9pp pass@1 on LCB v6 (42.4% -> 55.3%)",
+        "t_train": "2.0", "t_eval": "1.1", "top_k": "10",
+        "iterations": "2500", "gpus": "4-8x A100",
+    },
+    "Llama-3.1-8B-Instruct": {
+        "config": "presets/llama_8b_instruct.yaml",
+        "expected": "+3.5pp pass@1 on LCB v6 (12.7% -> 16.2%)",
+        "t_train": "1.5", "t_eval": "0.6", "top_k": "10",
+        "iterations": "2500", "gpus": "1x A100",
+    },
+}
+
+
+def build_reproduce_tab(state: DashboardState, runner: JobRunner):
+    """Tab 7: One-click paper reproduction."""
+    import gradio as gr
+
+    gr.Markdown(
+        "### Reproduce Paper Results\n"
+        "Select a model from the paper, review the hyperparameters, and click Run. "
+        "Uses exact configs from Table 2/3 of the SSD paper."
+    )
+
+    model_names = list(PAPER_PRESETS.keys())
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            model_picker = gr.Radio(
+                choices=model_names, value=model_names[0],
+                label="Model (from paper)",
+            )
+
+            # Info card
+            info_md = gr.Markdown("")
+
+            with gr.Row():
+                skip_synth = gr.Checkbox(label="Skip synthesis", value=False)
+                skip_train = gr.Checkbox(label="Skip training", value=False)
+
+            run_btn = gr.Button("Reproduce This Result", variant="primary", size="lg")
+
+        with gr.Column(scale=2):
+            config_preview = gr.Code(label="Preset Config", language="yaml", interactive=False, lines=25)
+            status_md = gr.Markdown("")
+            log_output = gr.Code(label="Logs", language=None, interactive=False, lines=18)
+            poll_btn = gr.Button("Refresh Logs", size="sm")
+
+    def show_preset(model_name):
+        preset = PAPER_PRESETS.get(model_name, {})
+        info = (
+            f"**Expected:** {preset.get('expected', '?')}\n\n"
+            f"| Parameter | Value |\n|---|---|\n"
+            f"| T_train | {preset.get('t_train', '?')} |\n"
+            f"| T_eval | {preset.get('t_eval', '?')} |\n"
+            f"| top-k | {preset.get('top_k', '?')} |\n"
+            f"| Iterations | {preset.get('iterations', '?')} |\n"
+            f"| Hardware | {preset.get('gpus', '?')} |"
+        )
+        config_path = state.configs_dir / preset.get("config", "")
+        preview = config_path.read_text(encoding="utf-8") if config_path.exists() else "Preset not found"
+        return info, preview
+
+    def launch_reproduce(model_name, skip_s, skip_t):
+        preset = PAPER_PRESETS.get(model_name, {})
+        config_path = str(state.configs_dir / preset.get("config", ""))
+        cmd = ["averyml", "run-pipeline", "--config", config_path]
+        if skip_s:
+            cmd.append("--skip-synthesis")
+        if skip_t:
+            cmd.append("--skip-training")
+        msg = runner.launch(cmd)
+        return f"**{msg}**", ""
+
+    def poll_logs():
+        st, cls = runner.get_status()
+        return runner.get_logs(), status_badge(st, cls)
+
+    model_picker.change(fn=show_preset, inputs=[model_picker], outputs=[info_md, config_preview])
+    run_btn.click(fn=launch_reproduce, inputs=[model_picker, skip_synth, skip_train], outputs=[status_md, log_output])
+    poll_btn.click(fn=poll_logs, outputs=[log_output, status_md])
+
+    # Load initial preset
+    app_load_info, app_load_preview = show_preset(model_names[0])
+    info_md.value = app_load_info
+    config_preview.value = app_load_preview
+
+
+# ========================================================================== #
+# Tab 8: Compare
+# ========================================================================== #
+
+def build_compare_tab(state: DashboardState):
+    """Tab 8: Side-by-side comparison with significance testing."""
+    import gradio as gr
+
+    all_results = load_all_results(state)
+
+    if not all_results:
+        gr.HTML(empty_state(
+            "No results to compare",
+            "Run at least two evaluations (base + SSD), then compare them here.",
+            "averyml evaluate --config configs/evaluation/lcb_v6.yaml",
+            icon="&#x2696;&#xfe0f;",
+        ))
+        return
+
+    gr.Markdown(
+        "### Compare Base vs SSD\n"
+        "Select a base result and an SSD result to see pass@k deltas "
+        "with per-difficulty breakdowns."
+    )
+
+    # Build dropdown choices
+    choices = []
+    for i, r in enumerate(all_results):
+        cfg = r.get("config", {})
+        res = r.get("results", {})
+        model = cfg.get("model_id", "?").split("/")[-1]
+        bench = cfg.get("benchmark", "?")
+        p1 = f"{res.get('pass@1', 0):.1%}" if isinstance(res.get("pass@1"), float) else "?"
+        choices.append(f"[{i}] {model} | {bench} | pass@1={p1}")
+
+    with gr.Row():
+        base_picker = gr.Dropdown(choices=choices, label="Base Model Result", interactive=True,
+                                   value=choices[0] if choices else None)
+        ssd_picker = gr.Dropdown(choices=choices, label="SSD Model Result", interactive=True,
+                                  value=choices[1] if len(choices) > 1 else (choices[0] if choices else None))
+
+    compare_btn = gr.Button("Compare", variant="primary")
+    refresh_btn = gr.Button("Refresh Results", size="sm")
+
+    comparison_md = gr.Markdown("")
+    with gr.Row():
+        comp_chart = gr.Plot(label="Pass@k Comparison")
+        diff_chart = gr.Plot(label="Difficulty Breakdown")
+
+    def do_compare(base_choice, ssd_choice):
+        if not base_choice or not ssd_choice:
+            return "Select both results", None, None
+
+        base_idx = int(base_choice.split("]")[0].strip("["))
+        ssd_idx = int(ssd_choice.split("]")[0].strip("["))
+        base = all_results[base_idx]
+        ssd = all_results[ssd_idx]
+
+        base_res = base.get("results", {})
+        ssd_res = ssd.get("results", {})
+        base_model = base.get("config", {}).get("model_id", "?").split("/")[-1]
+        ssd_model = ssd.get("config", {}).get("model_id", "?").split("/")[-1]
+
+        # Build comparison table
+        lines = [
+            f"**Base:** {base_model} | **SSD:** {ssd_model}\n",
+            "| Metric | Base | SSD | Delta |",
+            "|---|---|---|---|",
+        ]
+        for k in [1, 5, 10]:
+            key = f"pass@{k}"
+            bv = base_res.get(key)
+            sv = ssd_res.get(key)
+            if isinstance(bv, float) and isinstance(sv, float):
+                delta = sv - bv
+                sign = "+" if delta > 0 else ""
+                lines.append(f"| {key} | {bv:.1%} | {sv:.1%} | **{sign}{delta:.1%}** |")
+
+        # Per-difficulty
+        for diff in ["easy", "medium", "hard"]:
+            key = f"pass@1_{diff}"
+            bv = base_res.get(key)
+            sv = ssd_res.get(key)
+            if isinstance(bv, float) and isinstance(sv, float):
+                delta = sv - bv
+                sign = "+" if delta > 0 else ""
+                lines.append(f"| pass@1 {diff} | {bv:.1%} | {sv:.1%} | {sign}{delta:.1%} |")
+
+        from averyml.dashboard.charts import build_comparison_chart, build_difficulty_chart
+        comp = build_comparison_chart([base, ssd])
+        diff = build_difficulty_chart([base, ssd])
+
+        return "\n".join(lines), comp, diff
+
+    def refresh():
+        nonlocal all_results
+        all_results = load_all_results(state)
+        new_choices = []
+        for i, r in enumerate(all_results):
+            cfg = r.get("config", {})
+            res = r.get("results", {})
+            model = cfg.get("model_id", "?").split("/")[-1]
+            p1 = f"{res.get('pass@1', 0):.1%}" if isinstance(res.get("pass@1"), float) else "?"
+            new_choices.append(f"[{i}] {model} | pass@1={p1}")
+        return gr.update(choices=new_choices), gr.update(choices=new_choices)
+
+    compare_btn.click(fn=do_compare, inputs=[base_picker, ssd_picker], outputs=[comparison_md, comp_chart, diff_chart])
+    refresh_btn.click(fn=refresh, outputs=[base_picker, ssd_picker])
+
+
+# ========================================================================== #
+# Tab 9: Export
 # ========================================================================== #
 
 def build_export_tab(state: DashboardState):

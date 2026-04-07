@@ -17,15 +17,17 @@ def create_app(
     configs_dir: str = "./configs",
     search_dir: str = "./search_results",
 ) -> Any:
-    """Create the Gradio Blocks app with all 8 tabs."""
+    """Create the Gradio Blocks app with 10 tabs."""
     import gradio as gr
 
     from averyml.dashboard.tabs import (
+        build_compare_tab,
         build_config_tab,
         build_data_explorer_tab,
         build_export_tab,
         build_home_tab,
         build_pipeline_tab,
+        build_reproduce_tab,
         build_results_tab,
         build_search_tab,
         build_training_monitor_tab,
@@ -41,10 +43,14 @@ def create_app(
     ) as app:
         with gr.Tab("Home"):
             build_home_tab(state, runner)
+        with gr.Tab("Reproduce Paper"):
+            build_reproduce_tab(state, runner)
         with gr.Tab("Pipeline"):
             build_pipeline_tab(state, runner)
         with gr.Tab("Results"):
             build_results_tab(state)
+        with gr.Tab("Compare"):
+            build_compare_tab(state)
         with gr.Tab("Temperature Search"):
             build_search_tab(state)
         with gr.Tab("Data Explorer"):
